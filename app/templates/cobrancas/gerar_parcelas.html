@@ -1,0 +1,38 @@
+<!-- app/templates/cobrancas/gerar_parcelas.html -->
+{% extends "base.html" %}
+{% from 'bootstrap5/form.html' import render_form %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>{{ title }}</h1>
+<hr>
+
+{# Dica: Informar ao usuário sobre o valor e dia padrão do cliente #}
+{# Isso exigiria um pouco de JavaScript para buscar ao selecionar o cliente #}
+{# <div id="cliente-info" class="alert alert-info" style="display: none;"></div> #}
+
+{# Renderiza o formulário de geração #}
+{{ render_form(form) }}
+
+{# Link para voltar (opcional) #}
+{ <a href="{{ url_for('main.listar_clientes') }}" class="btn btn-secondary mt-3">Ir para Clientes</a> }
+
+{% endblock %}
+
+{# Bloco de Scripts (opcional, para carregar dados do cliente) #}
+{# {% block scripts %}
+<script>
+    document.getElementById('cliente').addEventListener('change', function() {
+        var clienteId = this.value;
+        var infoDiv = document.getElementById('cliente-info');
+        if (clienteId) {
+            // Fazer uma requisição AJAX para buscar dados do cliente (valor/dia)
+            // fetch('/api/cliente/' + clienteId) ... e exibir no infoDiv
+            // infoDiv.style.display = 'block';
+        } else {
+            infoDiv.style.display = 'none';
+        }
+    });
+</script>
+{% endblock %} #}

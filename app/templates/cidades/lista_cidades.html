@@ -1,0 +1,90 @@
+<!-- app/templates/cidades/lista_cidades.html -->
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>{{ title }}</h1>
+    <a href="{{ url_for('main.adicionar_cidade') }}" class="btn btn-success">Adicionar Nova Cidade</a>
+</div>
+
+<table class="table table-striped table-hover">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Nome da Cidade</th>
+            <th>Estado</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for cidade in cidades.items %} {# Loop pelos itens da página atual da paginação #}
+        <tr>
+            <td>{{ cidade.id }}</td>
+            <td>{{ cidade.nome_cidade }}</td>
+            <td>{{ cidade.estado }}</td>
+            <td>
+                <a href="{{ url_for('main.editar_cidade', id=cidade.id) }}" class="btn btn-sm btn-outline-primary me-1">Editar</a>
+                {# Botão para acionar o modal de confirmação de exclusão #}
+                <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#confirmDeleteModal-{{ cidade.id }}">
+                    Excluir
+                </button>
+
+                <!-- Modal de Confirmação de Exclusão -->
+                <div class="modal fade" id="confirmDeleteModal-{{ cidade.id }}" tabindex="-1" aria-labelledby="confirmDeleteModalLabel-{{ cidade.id }}" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="confirmDeleteModalLabel-{{ cidade.id }}">Confirmar Exclusão</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                Tem certeza que deseja excluir a cidade "{{ cidade.nome_cidade }}/{{ cidade.estado }}"?
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                <form action="{{ url_for('main.deletar_cidade', id=cidade.id) }}" method="POST" style="display: inline;">
+                                    <input type="hidden" name="csrf_token" value="{{ generate_csrf() }}">
+                                    <button type="submit" class="btn btn-danger">Excluir</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="4" class="text-center">Nenhuma cidade cadastrada ainda.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{# Controles de Paginação #}
+<nav aria-label="Paginação de Cidades">
+    <ul class="pagination justify-content-center">
+        {# Link para a página anterior #}
+        <li class="page-item {% if not cidades.has_prev %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('main.listar_cidades', page=cidades.prev_num) if cidades.has_prev else '#'}}">Anterior</a>
+        </li>
+
+        {# Links para as páginas individuais (ex: 1, 2, 3 ...) #}
+        {% for page_num in cidades.iter_pages() %}
+            {% if page_num %}
+                <li class="page-item {% if page_num == cidades.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('main.listar_cidades', page=page_num) }}">{{ page_num }}</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+
+        {# Link para a próxima página #}
+        <li class="page-item {% if not cidades.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('main.listar_cidades', page=cidades.next_num) if cidades.has_next else '#'}}">Próxima</a>
+        </li>
+    </ul>
+</nav>
+{% endblock %}

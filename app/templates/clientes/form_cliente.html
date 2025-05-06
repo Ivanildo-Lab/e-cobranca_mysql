@@ -1,0 +1,16 @@
+<!-- app/templates/clientes/form_cliente.html -->
+{% extends "base.html" %}
+{% from 'bootstrap5/form.html' import render_form %} {# Importa render_form #}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>{{ legend }}</h1>
+<hr>
+{# Renderiza o formulário ClienteForm #}
+{{ render_form(form) }}
+
+{# Link para voltar para a lista #}
+<a href="{{ url_for('main.listar_clientes') }}" class="btn btn-secondary mt-3">Cancelar</a>
+
+{% endblock %}

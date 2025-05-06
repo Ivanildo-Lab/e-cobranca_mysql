@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>{{ title }}</h1>
+    <a href="{{ url_for('main.adicionar_cliente') }}" class="btn btn-success">Adicionar Novo Cliente</a>
+</div>
+
+{# --- Formulário de Busca e Filtro de Status --- #}
+<form method="GET" action="{{ url_for('main.listar_clientes') }}" class="mb-4">
+    <div class="row g-2 align-items-center">
+
+        {# Coluna da Barra de Busca #}
+        <div class="col-md-5"> {# Ajuste a largura conforme necessário #}
+            <input type="search" name="q" class="form-control" placeholder="Buscar por Nome ou Contato..." value="{{ request.args.get('q', '') }}">
+        </div>
+
+        {# Coluna dos Botões de Ação (Buscar/Limpar) #}
+        <div class="col-auto">
+            <button class="btn btn-outline-primary" type="submit">Buscar</button>
+        </div>
+        {% if request.args.get('q') %}
+        <div class="col-auto">
+            <a href="{{ url_for('main.listar_clientes', status=request.args.get('status', 'ativos')) }}" class="btn btn-outline-secondary" type="button">Limpar Busca</a> {# Limpar só a busca, mantém status #}
+        </div>
+        {% endif %}
+        
+        {# Coluna do Grupo de Botões de Filtro de Status #}
+        <div class="col-md-4"> {# Ajuste a largura conforme necessário #}
+            <div class="btn-group w-100" role="group" aria-label="Filtro de Status do Cliente">
+                {# Link para Todos #}
+                <a href="{{ url_for('main.listar_clientes', status='todos', q=request.args.get('q', '')) }}"
+                   class="btn {% if request.args.get('status', 'ativos') == 'todos' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Todos</a>
+                {# Link para Ativos (Padrão) #}
+                <a href="{{ url_for('main.listar_clientes', status='ativos', q=request.args.get('q', '')) }}"
+                   class="btn {% if request.args.get('status', 'ativos') == 'ativos' %}btn-success{% else %}btn-outline-success{% endif %}">Ativos</a>
+                {# Link para Inativos #}
+                 <a href="{{ url_for('main.listar_clientes', status='inativos', q=request.args.get('q', '')) }}"
+                   class="btn {% if request.args.get('status', 'ativos') == 'inativos' %}btn-danger{% else %}btn-outline-danger{% endif %}">Inativos</a>
+            </div>
+        </div>
+
+       
+    </div>
+</form>
+{# --- FIM: Formulário de Busca e Filtro --- #}
+
+{# Mensagem opcional indicando o termo de busca e/ou filtro ativo #}
+{% set current_status = request.args.get('status', 'ativos') %}
+{% set status_text = {'todos': 'Todos os Clientes', 'ativos': 'Clientes Ativos', 'inativos': 'Clientes Inativos'}.get(current_status, 'Clientes Ativos') %}
+
+<h5 class="mb-3">
+    Exibindo: {{ status_text }}
+    {% if request.args.get('q') %}
+        (Resultados da busca por: "{{ request.args.get('q') }}")
+    {% endif %}
+</h5>
+
+
+<table class="table table-striped table-hover table-sm">
+    {# ... (thead da tabela como antes) ... #}
+     <thead>
+        <tr>
+            <th>ID</th>
+            <th>Nome</th>
+            <th>Cidade/UF</th>
+            <th>Contato</th>
+            <th>Mensalidade</th>
+            <th>Dia Cobr.</th>
+            <th>Ativo</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for cliente in clientes.items %}
+        {# ... (tr/td da linha da tabela como antes, incluindo a classe para inativos) ... #}
+        <tr class="{{ 'table-secondary text-muted' if not cliente.ativo }}">
+            <td>{{ cliente.id }}</td>
+            <td>{{ cliente.nome }}</td>
+            <td>{{ cliente.cidade_ref.nome_cidade }}/{{ cliente.cidade_ref.estado }}</td>
+            <td>{{ cliente.contato | default('-', true) }}</td>
+            <td>{{ ('R$ %.2f'|format(cliente.valor_mensalidade)) if cliente.valor_mensalidade is not none else '-' }}</td>
+            <td>{{ cliente.dia_cobranca | default('-', true) }}</td>
+            <td>
+                <span class="badge bg-{{ 'success' if cliente.ativo else 'danger' }}">
+                    {{ 'Sim' if cliente.ativo else 'Não' }}
+                </span>
+            </td>
+            <td>
+                <a href="{{ url_for('main.editar_cliente', id=cliente.id) }}" class="btn btn-sm btn-outline-primary me-1">Editar</a>
+                {% if cliente.ativo %}
+                <button type="button" class="btn btn-sm btn-outline-warning"
+                        data-bs-toggle="modal" data-bs-target="#confirmDeactivateModal-{{ cliente.id }}">
+                    Desativar
+                </button>
+                 <!-- Modal de Confirmação de Desativação -->
+                <div class="modal fade" id="confirmDeactivateModal-{{ cliente.id }}" tabindex="-1" aria-labelledby="confirmDeactivateModalLabel-{{ cliente.id }}" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="confirmDeactivateModalLabel-{{ cliente.id }}">Confirmar Desativação</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                Tem certeza que deseja desativar o cliente "{{ cliente.nome }}"?
+                                <br>
+                                <small>O cliente poderá ser reativado posteriormente se necessário.</small>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                <form action="{{ url_for('main.desativar_cliente', id=cliente.id) }}" method="POST" style="display: inline;">
+                                    <input type="hidden" name="csrf_token" value="{{ generate_csrf() }}">
+                                    <button type="submit" class="btn btn-warning">Confirmar Desativação</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        {# Mensagem "Nenhum cliente" atualizada #}
+        <tr>
+            <td colspan="8" class="text-center">
+                Nenhum cliente encontrado com os filtros aplicados
+                {% if request.args.get('q') %}(busca por "{{ request.args.get('q') }}"){% endif %}.
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{# --- Controles de Paginação (Passando Status e Busca) --- #}
+<nav aria-label="Paginação de Clientes">
+    <ul class="pagination justify-content-center">
+        {# Adiciona 'status' aos links de paginação #}
+        <li class="page-item {% if not clientes.has_prev %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('main.listar_clientes', page=clientes.prev_num, q=request.args.get('q', ''), status=request.args.get('status', 'ativos')) if clientes.has_prev else '#'}}">Anterior</a>
+        </li>
+        {% for page_num in clientes.iter_pages() %}
+            {% if page_num %}
+                <li class="page-item {% if page_num == clientes.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('main.listar_clientes', page=page_num, q=request.args.get('q', ''), status=request.args.get('status', 'ativos')) }}">{{ page_num }}</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if not clientes.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('main.listar_clientes', page=clientes.next_num, q=request.args.get('q', ''), status=request.args.get('status', 'ativos')) if clientes.has_next else '#'}}">Próxima</a>
+        </li>
+    </ul>
+</nav>
+{# --- FIM: Controles de Paginação --- #}
+
+{% endblock %}
