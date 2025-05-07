@@ -1,70 +1,42 @@
-# app/main/routes.py
+# app/main/routes.py (Simplificado sem Posts)
 from datetime import datetime
 from flask import render_template, flash, redirect, url_for, request, \
-    jsonify, current_app # Removido 'g' se não for mais usado
+    jsonify, current_app
 from flask_login import current_user, login_required
-# REMOVIDO: from flask_babel import _, get_locale
 from app import db
-from app.main.forms import EditProfileForm, EmptyForm, PostForm
-from app.models import User, Post
-# REMOVIDO: from app.translate import translate (se existia para Babel)
+from app.main.forms import EditProfileForm, EmptyForm # PostForm removido
+from app.models import User # Post removido da importação
 from . import bp
 
-# REMOVIDO: @bp.before_app_request e a função before_request se era só para g.locale
-
-@bp.route('/', methods=['GET', 'POST'])
-@bp.route('/index', methods=['GET', 'POST'])
+@bp.route('/')
+@bp.route('/index')
 @login_required
 def index():
-    form = PostForm()
-    if form.validate_on_submit():
-        post = Post(body=form.post.data, author=current_user) # Removido 'language' se era do Babel
-        db.session.add(post)
-        db.session.commit()
-        flash('Your post is now live!')
-        return redirect(url_for('main.index'))
-    page = request.args.get('page', 1, type=int)
-    posts = current_user.followed_posts().paginate(
-        page=page, per_page=current_app.config['POSTS_PER_PAGE'],
-        error_out=False)
-    next_url = url_for('main.index', page=posts.next_num) \
-        if posts.has_next else None
-    prev_url = url_for('main.index', page=posts.prev_num) \
-        if posts.has_prev else None
-    return render_template('index.html', title='Home', form=form,
-                           posts=posts.items, next_url=next_url,
-                           prev_url=prev_url)
+    # Lógica da página inicial para um sistema de cobranças
+    # Por exemplo, mostrar um dashboard, lista de clientes, etc.
+    # Esta é uma substituição, já que a lógica de posts foi removida.
+    # Você precisará definir o que esta página faz agora.
+    # Exemplo simples:
+    user_data = {"username": current_user.username, "email": current_user.email}
+    return render_template('index.html', title='Dashboard', user_data=user_data) # Template precisa ser ajustado
 
-@bp.route('/explore')
+@bp.route('/explore') # Esta rota provavelmente não faz sentido sem posts. Considere removê-la.
 @login_required
 def explore():
-    page = request.args.get('page', 1, type=int)
-    posts = Post.query.order_by(Post.timestamp.desc()).paginate(
-        page=page, per_page=current_app.config['POSTS_PER_PAGE'],
-        error_out=False)
-    next_url = url_for('main.explore', page=posts.next_num) \
-        if posts.has_next else None
-    prev_url = url_for('main.explore', page=posts.prev_num) \
-        if posts.has_prev else None
-    return render_template('index.html', title='Explore', posts=posts.items,
-                           next_url=next_url, prev_url=prev_url)
+    flash('Explore feature (posts) is not currently active.')
+    return redirect(url_for('main.index')) # Ou renderize um template diferente
 
 @bp.route('/user/<username>')
 @login_required
-def user(username):
+def user_profile(username): # Renomeado para clareza, já que não mostra mais posts
     user = User.query.filter_by(username=username).first_or_404()
-    page = request.args.get('page', 1, type=int)
-    posts = user.posts.order_by(Post.timestamp.desc()).paginate(
-        page=page, per_page=current_app.config['POSTS_PER_PAGE'],
-        error_out=False)
-    next_url = url_for('main.user', username=user.username, page=posts.next_num) \
-        if posts.has_next else None
-    prev_url = url_for('main.user', username=user.username, page=posts.prev_num) \
-        if posts.has_prev else None
-    form = EmptyForm()
-    return render_template('user.html', user=user, posts=posts.items,
-                           next_url=next_url, prev_url=prev_url, form=form, title=user.username)
+    form = EmptyForm() # Para ação de seguir/deixar de seguir, se mantida
+    # A lógica de paginação de posts foi removida
+    return render_template('user.html', user=user, form=form, title=user.username)
 
+# As rotas edit_profile, follow, unfollow podem permanecer, pois não dependem diretamente do modelo Post.
+
+# ... (edit_profile, follow, unfollow como antes) ...
 @bp.route('/edit_profile', methods=['GET', 'POST'])
 @login_required
 def edit_profile():
@@ -92,11 +64,11 @@ def follow(username):
             return redirect(url_for('main.index'))
         if user_to_follow == current_user:
             flash('You cannot follow yourself!')
-            return redirect(url_for('main.user', username=username))
+            return redirect(url_for('main.user_profile', username=username)) # Rota user_profile
         current_user.follow(user_to_follow)
         db.session.commit()
         flash(f'You are following {username}!')
-        return redirect(url_for('main.user', username=username))
+        return redirect(url_for('main.user_profile', username=username)) # Rota user_profile
     else:
         return redirect(url_for('main.index'))
 
@@ -111,12 +83,10 @@ def unfollow(username):
             return redirect(url_for('main.index'))
         if user_to_unfollow == current_user:
             flash('You cannot unfollow yourself!')
-            return redirect(url_for('main.user', username=username))
+            return redirect(url_for('main.user_profile', username=username)) # Rota user_profile
         current_user.unfollow(user_to_unfollow)
         db.session.commit()
         flash(f'You are not following {username}.')
-        return redirect(url_for('main.user', username=username))
+        return redirect(url_for('main.user_profile', username=username)) # Rota user_profile
     else:
         return redirect(url_for('main.index'))
-
-# REMOVIDO: def translate_text(): ...

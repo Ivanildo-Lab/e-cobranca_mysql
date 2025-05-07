@@ -4,7 +4,7 @@ from flask import Blueprint
 # Define o Blueprint para a autenticação
 # O primeiro argumento 'auth' é o nome do blueprint, usado em url_for('auth.rota')
 # O segundo argumento __name__ ajuda o Flask a localizar templates e arquivos estáticos
-bp = Blueprint('auth', __name__)
+bp = Blueprint('auth', __name__) 
 
 # Importa as rotas e formulários DEPOIS da criação do blueprint 'bp'
 # Isso evita problemas de importação circular, pois routes.py e forms.py

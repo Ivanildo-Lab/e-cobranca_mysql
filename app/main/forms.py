@@ -24,9 +24,3 @@ class EmptyForm(FlaskForm):
     # Usado para ações que só precisam de um botão de submit e proteção CSRF
     # como seguir/deixar de seguir
     submit = SubmitField('Submit')
-
-class PostForm(FlaskForm):
-    # Usado para criar novas postagens
-    post = TextAreaField('Say something', validators=[
-        DataRequired(), Length(min=1, max=140)])
-    submit = SubmitField('Submit')
