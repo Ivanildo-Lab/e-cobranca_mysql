@@ -1,29 +1,39 @@
+# app/auth/forms.py
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, BooleanField, SubmitField
 from wtforms.validators import DataRequired, Email, EqualTo, ValidationError, Length
-from app.models import User # Certifique-se que app.models.User está definido
+from app.models import User
 
 class LoginForm(FlaskForm):
-    email = StringField('Email', validators=[DataRequired(), Email()])
-    password = PasswordField('Senha', validators=[DataRequired()])
-    remember_me = BooleanField('Lembrar-me')
-    submit = SubmitField('Login')
+    username = StringField('Username', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[DataRequired()])
+    remember_me = BooleanField('Remember Me')
+    submit = SubmitField('Sign In')
 
 class RegistrationForm(FlaskForm):
-    username = StringField('Nome de Usuário', validators=[DataRequired(), Length(min=2, max=64)])
-    email = StringField('Email', validators=[DataRequired(), Email(), Length(max=120)])
-    password = PasswordField('Senha', validators=[DataRequired(), Length(min=6)])
+    username = StringField('Username', validators=[DataRequired(), Length(min=1, max=64)])
+    email = StringField('Email', validators=[DataRequired(), Email(), Length(min=1, max=120)])
+    password = PasswordField('Password', validators=[DataRequired()])
     password2 = PasswordField(
-        'Repetir Senha', validators=[DataRequired(), EqualTo('password', message='As senhas devem ser iguais.')])
-    submit = SubmitField('Registrar')
+        'Repeat Password', validators=[DataRequired(), EqualTo('password')])
+    submit = SubmitField('Register')
 
     def validate_username(self, username):
         user = User.query.filter_by(username=username.data).first()
-        if user:
-            raise ValidationError('Este nome de usuário já está em uso. Por favor, escolha outro.')
+        if user is not None:
+            raise ValidationError('Please use a different username.')
 
     def validate_email(self, email):
-        # Armazenar e verificar emails em minúsculas para evitar duplicidade
-        user = User.query.filter_by(email=email.data.lower()).first()
-        if user:
-            raise ValidationError('Este email já está registrado. Por favor, use outro.')
+        user = User.query.filter_by(email=email.data).first()
+        if user is not None:
+            raise ValidationError('Please use a different email address.')
+
+class ResetPasswordRequestForm(FlaskForm):
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    submit = SubmitField('Request Password Reset')
+
+class ResetPasswordForm(FlaskForm):
+    password = PasswordField('Password', validators=[DataRequired()])
+    password2 = PasswordField(
+        'Repeat Password', validators=[DataRequired(), EqualTo('password')])
+    submit = SubmitField('Reset Password')

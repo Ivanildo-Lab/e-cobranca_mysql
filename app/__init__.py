@@ -1,74 +1,84 @@
 # app/__init__.py
-from flask import Flask
+import logging
+from logging.handlers import SMTPHandler, RotatingFileHandler
+import os
+from flask import Flask # request, current_app não são mais usados globalmente aqui após remover Babel e g.locale
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_bootstrap import Bootstrap5
-from flask_wtf.csrf import CSRFProtect, generate_csrf
-from flask_login import LoginManager # Importa LoginManager
+from flask_login import LoginManager
+from flask_mail import Mail
+from flask_bootstrap import Bootstrap4 as Bootstrap
+from flask_moment import Moment
+# REMOVIDO: from flask_babel import Babel, lazy_gettext as _l
 from config import Config
-import datetime
-from datetime import date
 
-# --- Instancia as extensões FORA de create_app ---
 db = SQLAlchemy()
 migrate = Migrate()
-bootstrap = Bootstrap5()
-csrf = CSRFProtect()
 login_manager = LoginManager()
+mail = Mail()
+bootstrap = Bootstrap()
+moment = Moment()
+# REMOVIDO: babel = Babel()
 
-# Configurações do Flask-Login (fora de create_app)
-login_manager.login_view = 'auth.login' # Nome do blueprint 'auth', função 'login'
-login_manager.login_message = 'Por favor, faça o login para acessar esta página.'
-login_manager.login_message_category = 'info'
-# -------------------------------------------------
+@login_manager.user_loader
+def load_user(user_id):
+    from app.models import User # Importação local para evitar ciclos
+    return User.query.get(int(user_id))
 
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    # Validação da SECRET_KEY (essencial para CSRF e Sessões)
-    if not app.config['SECRET_KEY']:
-        raise ValueError("Necessário definir a SECRET_KEY na configuração.")
-
-    # --- Inicializa as extensões com o app DENTRO de create_app ---
     db.init_app(app)
     migrate.init_app(app, db)
+    login_manager.init_app(app)
+    mail.init_app(app)
     bootstrap.init_app(app)
-    csrf.init_app(app)
-    login_manager.init_app(app) # Inicializa Flask-Login
-    # -------------------------------------------------------------
+    moment.init_app(app)
+    # REMOVIDO: babel.init_app(app)
 
-    # --- Importações e Configurações que dependem do app ou extensões ---
+    login_manager.login_view = 'auth.login'
+    # Texto simples, sem _l()
+    login_manager.login_message = 'Please log in to access this page.'
+    login_manager.login_message_category = 'info'
 
-    # Importa modelos AQUI, depois que 'db' existe mas antes dos blueprints
-    from app import models
-    # Importa especificamente StatusParcela para o context processor
-    # (models já importa User, que importa login_manager para o user_loader)
-    from app.models import StatusParcela
+    # REMOVIDA: Definição de get_locale_for_request e registro com babel
 
-    # Context processor para injetar variáveis globais nos templates
-    @app.context_processor
-    def inject_global_vars():
-        # Não precisa importar User aqui, a menos que use current_user diretamente
-        return {
-            'current_year': datetime.date.today().year,
-            'generate_csrf': generate_csrf,
-            'StatusParcela': StatusParcela,
-            'date': date
-        }
+    from app.errors import bp as errors_bp
+    app.register_blueprint(errors_bp)
 
-    # --- Registro dos Blueprints ---
+    
+    from app.main import bp as main_bp
+    app.register_blueprint(main_bp)
+    
+    from app.auth import bp as auth_bp
+    app.register_blueprint(auth_bp, url_prefix='/auth')
 
-    # Blueprint Principal ('main')
-    from app.routes import bp as main_bp
-    app.register_blueprint(main_bp) # Registra sem prefixo (ou com prefixo se definido em routes.py)
+    if not app.debug and not app.testing:
+        if app.config['MAIL_SERVER']:
+            auth = None
+            if app.config['MAIL_USERNAME'] or app.config['MAIL_PASSWORD']:
+                auth = (app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
+            secure = None
+            if app.config['MAIL_USE_TLS']:
+                secure = ()
+            mail_handler = SMTPHandler(
+                mailhost=(app.config['MAIL_SERVER'], app.config['MAIL_PORT']),
+                fromaddr='no-reply@' + app.config['MAIL_SERVER'], # Ajuste o email do remetente se necessário
+                toaddrs=app.config['ADMINS'], subject='e-Cobranca Failure',
+                credentials=auth, secure=secure)
+            mail_handler.setLevel(logging.ERROR)
+            app.logger.addHandler(mail_handler)
 
-    # Blueprint de Autenticação ('auth')
-   
-   
-    # -----------------------------
+        if not os.path.exists('logs'):
+            os.mkdir('logs')
+        file_handler = RotatingFileHandler('logs/e_cobranca.log', maxBytes=10240, backupCount=10)
+        file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'))
+        file_handler.setLevel(logging.INFO)
+        app.logger.addHandler(file_handler)
 
-    # O user_loader definido em models.py será associado ao login_manager
-    # porque importamos 'login_manager' de 'app' dentro de models.py
+        app.logger.setLevel(logging.INFO)
+        app.logger.info('e-Cobranca startup')
 
     return app
