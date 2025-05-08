@@ -111,7 +111,7 @@ def dashboard():
 
     return render_template(
         'dashboard/index.html',
-        title='Dashboard',
+        title='e-Cobranças - Dashboard',
         # Novos/Ajustados valores para os cards
         mes_ano_atual=hoje.strftime("%m/%Y"), # Passa MM/YYYY atual
         a_receber_mes_atual=a_receber_mes_atual,
@@ -128,7 +128,7 @@ def listar_cidades():
     page = request.args.get('page', 1, type=int) # Pega o número da página da URL, default é 1
     # Busca cidades ordenadas por nome e pagina o resultado (ex: 10 por página)
     cidades = Cidade.query.order_by(Cidade.nome_cidade).paginate(page=page, per_page=10)
-    return render_template('cidades/lista_cidades.html', cidades=cidades, title='Lista de Cidades')
+    return render_template('cidades/lista_cidades.html', cidades=cidades, title='e-Cobranças  - Lista de Cidades')
 
 # Rota para ADICIONAR Nova Cidade (GET para mostrar formulário, POST para processar)
 @bp.route('/cidades/novo', methods=['GET', 'POST'])
@@ -147,7 +147,7 @@ def adicionar_cidade():
             db.session.rollback() # Desfaz em caso de erro
             flash(f'Erro ao adicionar cidade: {e}', 'danger')
     # Se for GET ou se o formulário não for válido, renderiza o template do formulário
-    return render_template('cidades/form_cidade.html', form=form, title='Adicionar Nova Cidade', legend='Nova Cidade')
+    return render_template('cidades/form_cidade.html', form=form, title='e-Cobranças  - Adicionar Nova Cidade', legend='Nova Cidade')
 
 # Rota para EDITAR Cidade Existente (GET para mostrar form preenchido, POST para processar)
 @bp.route('/cidades/<int:id>/editar', methods=['GET', 'POST'])
@@ -168,7 +168,7 @@ def editar_cidade(id):
             db.session.rollback()
             flash(f'Erro ao atualizar cidade: {e}', 'danger')
     # Se for GET, mostra o formulário preenchido
-    return render_template('cidades/form_cidade.html', form=form, title='Editar Cidade', legend=f'Editando: {cidade.nome_cidade}')
+    return render_template('cidades/form_cidade.html', form=form, title='e-Cobranças  - Editar Cidade', legend=f'Editando: {cidade.nome_cidade}')
 
 # Rota para DELETAR Cidade (usaremos POST para segurança)
 @bp.route('/cidades/<int:id>/deletar', methods=['POST'])
@@ -226,7 +226,7 @@ def listar_clientes():
 
     # Passa clientes paginados para o template
     # O template acessa 'q' e 'status' diretamente de 'request.args'
-    return render_template('clientes/lista_clientes.html', clientes=clientes, title='Lista de Clientes')
+    return render_template('clientes/lista_clientes.html', clientes=clientes, title='e-Cobranças  - Lista de Clientes')
 
 # ... (rotas adicionar_cliente, editar_cliente, deletar_cliente) ...
 # Rota para ADICIONAR Novo Cliente
@@ -256,7 +256,7 @@ def adicionar_cliente():
         except Exception as e:
             db.session.rollback()
             flash(f'Erro ao adicionar cliente: {e}', 'danger')
-    return render_template('clientes/form_cliente.html', form=form, title='Adicionar Novo Cliente', legend='Novo Cliente')
+    return render_template('clientes/form_cliente.html', form=form, title='e-Cobranças  - Adicionar Novo Cliente', legend='Novo Cliente')
 
 # Rota para EDITAR Cliente Existente
 @bp.route('/clientes/<int:id>/editar', methods=['GET', 'POST'])
@@ -291,7 +291,7 @@ def editar_cliente(id):
             db.session.rollback()
             flash(f'Erro ao atualizar cliente: {e}', 'danger')
 
-    return render_template('clientes/form_cliente.html', form=form, title='Editar Cliente', legend=f'Editando: {cliente.nome}')
+    return render_template('clientes/form_cliente.html', form=form, title='e-Cobranças  - Editar Cliente', legend=f'Editando: {cliente.nome}')
 
 # Rota para DESATIVAR Cliente (antiga deletar_cliente)
 
@@ -369,7 +369,7 @@ def gerar_parcelas():
             flash(f'Erro ao gerar parcelas: {e}', 'danger')
 
     # Se for GET ou o formulário for inválido
-    return render_template('cobrancas/gerar_parcelas.html', form=form, title='Gerar Novas Parcelas')
+    return render_template('cobrancas/gerar_parcelas.html', form=form, title='e-Cobranças  - Gerar Novas Parcelas')
 
 
 # --- ROTA PARA REGISTRAR PAGAMENTO ---
@@ -472,7 +472,7 @@ def editar_parcela(id):
 
     # Se for GET ou form inválido, renderiza o template de edição
     return render_template('cobrancas/form_editar_parcela.html',
-                           title='Editar Parcela',
+                           title='e-Cobranças  - Editar Parcela',
                            form=form,
                            parcela=parcela) # Passa a parcela para exibir infos
 
@@ -556,7 +556,7 @@ def listar_parcelas():
     # Não precisa mais passar lista_clientes/lista_status, o form cuida disso
     return render_template(
         'parcelas/lista_parcelas.html',
-        title='Lista de Parcelas',
+        title='e-Cobranças  - Lista de Parcelas',
         form=form, # Passa o formulário para renderização
         parcelas=parcelas_paginadas,
         # Passa os filtros ATUAIS para o botão PDF e paginação
@@ -675,7 +675,7 @@ def listar_parcelas_pdf():
     # Renderiza template base do PDF
     html_string = render_template(
         'parcelas/lista_parcelas_pdf_base.html',
-        title=f'Relatório de Parcelas',
+        title=f'e-Cobranças  - Relatório de Parcelas',
         parcelas=parcelas_filtradas,
         totais=totais,
         filtros_info={ # <-- USA AS VARIÁVEIS _fmt CORRIGIDAS
@@ -712,7 +712,7 @@ def listar_parcelas_pdf():
         # --- Fim Recálculo Totais ---
 
     return render_template('relatorios/extrato_cliente.html',
-                           title='Extrato do Cliente',
+                           title='e-Cobranças  - Extrato do Cliente',
                            form=form,
                            cliente=cliente_selecionado,
                            parcelas=parcelas_cliente,
