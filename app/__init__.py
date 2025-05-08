@@ -9,8 +9,8 @@ from flask_login import LoginManager
 from flask_mail import Mail
 from flask_bootstrap import Bootstrap4 as Bootstrap
 from flask_moment import Moment
-# REMOVIDO: from flask_babel import Babel, lazy_gettext as _l
 from config import Config
+from flask_wtf.csrf import CSRFProtect
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -18,7 +18,7 @@ login_manager = LoginManager()
 mail = Mail()
 bootstrap = Bootstrap()
 moment = Moment()
-# REMOVIDO: babel = Babel()
+csrf = CSRFProtect() 
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -35,7 +35,8 @@ def create_app(config_class=Config):
     mail.init_app(app)
     bootstrap.init_app(app)
     moment.init_app(app)
-    # REMOVIDO: babel.init_app(app)
+    csrf.init_app(app)
+   
 
     login_manager.login_view = 'auth.login'
     # Texto simples, sem _l()
@@ -46,7 +47,7 @@ def create_app(config_class=Config):
 
     from app.errors import bp as errors_bp
     app.register_blueprint(errors_bp)
-
+ 
     
     from app.main import bp as main_bp
     app.register_blueprint(main_bp)

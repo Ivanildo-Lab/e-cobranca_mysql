@@ -1,0 +1,23 @@
+{% extends "base.html" %} {# Ou o seu template base específico para erros, se tiver #}
+
+{% block title %}Erro Interno do Servidor - {{ super() }}{% endblock %}
+
+{% block content %} {# Ou o nome do seu bloco de conteúdo principal #}
+    <div class="container text-center mt-5">
+        <h1 class="display-1">500</h1>
+        <h2>Oops! Algo Deu Errado</h2>
+        <p class="lead">
+            Desculpe, estamos enfrentando um problema técnico inesperado.
+            Nossa equipe já foi notificada e está trabalhando para corrigir.
+        </p>
+        <p>Por favor, tente novamente mais tarde.</p>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary mt-3">
+            <i class="fas fa-home"></i> Voltar para a Página Inicial
+        </a>
+        {# Em modo de DEBUG, você poderia exibir o erro aqui, mas NUNCA em produção #}
+        {# {% if config.DEBUG and error %}
+            <hr>
+            <pre>{{ error }}</pre>
+        {% endif %} #}
+    </div>
+{% endblock %}

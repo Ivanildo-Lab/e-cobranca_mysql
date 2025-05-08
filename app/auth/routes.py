@@ -18,23 +18,20 @@ def login():
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data).first()
         if user is None or not user.check_password(form.password.data):
-            flash('Invalid username or password')
+            flash('Usuario ou Senha inválidos')
             return redirect(url_for('auth.login'))
         login_user(user, remember=form.remember_me.data)
         next_page = request.args.get('next')
         if not next_page or urllib_urlparse(next_page).netloc != '':
-            next_page = url_for('main.index') # Ou sua rota principal
+            next_page = url_for('main.dashboard') # Ou sua rota principal
         return redirect(next_page)
-    print(f"DEBUG: App template folder: {current_app.template_folder}")
-    print(f"DEBUG: Blueprint 'auth' template folder: {bp.template_folder}")
-    print(f"DEBUG: Trying to render: 'auth/login.html'")
 
-    return render_template('auth/templates/login.html', title='Sign In', form=form)
+    return render_template('auth/login.html', title='Fazer login', form=form)
 
 @bp.route('/logout')
 def logout():
     logout_user()
-    flash('You have been logged out.')
+    flash('Logout realizado com sucesso!')
     return redirect(url_for('main.index'))
 
 @bp.route('/register', methods=['GET', 'POST'])
@@ -47,9 +44,9 @@ def register():
         user.set_password(form.password.data)
         db.session.add(user)
         db.session.commit()
-        flash('Congratulations, you are now a registered user!')
+        flash('Parabéns, você está registrado!')
         return redirect(url_for('auth.login'))
-    return render_template('auth/templates/register.html', title='Register', form=form)
+    return render_template('auth/register.html', title='Registrar-se', form=form)
 
 @bp.route('/reset_password_request', methods=['GET', 'POST'])
 def reset_password_request():
@@ -60,9 +57,9 @@ def reset_password_request():
         user = User.query.filter_by(email=form.email.data).first()
         if user:
            # send_password_reset_email(user)
-            flash('Password reset via email is currently disabled.')
+            flash('senha de redefinição enviada para o seu email. desabilitada por enquanto')
         return redirect(url_for('auth.login'))
-    return render_template('auth/templates/reset_password_request.html',
+    return render_template('auth/reset_password_request.html',
                            title='Reset Password', form=form)
 
 @bp.route('/reset_password/<token>', methods=['GET', 'POST'])
@@ -78,4 +75,4 @@ def reset_password(token):
         db.session.commit()
         flash('Your password has been reset.')
         return redirect(url_for('auth.login'))
-    return render_template('auth/templates/reset_password.html', form=form, title='Reset Your Password')
+    return render_template('auth/reset_password.html', form=form, title='Reset Your Password')

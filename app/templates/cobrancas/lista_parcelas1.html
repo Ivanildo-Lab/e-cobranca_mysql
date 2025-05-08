@@ -149,7 +149,7 @@
                         <div class="modal-dialog">
                             <div class="modal-content">
                                 <form method="POST" action="{{ url_for('main.registrar_pagamento', id=parcela.id) }}" id="form-pagamento-{{ parcela.id }}">
-                                    <input type="hidden" name="csrf_token" value="{{ generate_csrf() }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <div class="modal-header">
                                         <h5 class="modal-title" id="pagarModalLabel-{{ parcela.id }}">Registrar Pagamento</h5>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -186,7 +186,7 @@
                         <div class="modal-dialog">
                             <div class="modal-content">
                                 <form method="POST" action="{{ url_for('main.cancelar_parcela', id=parcela.id) }}">
-                                    <input type="hidden" name="csrf_token" value="{{ generate_csrf() }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <div class="modal-header">
                                         <h5 class="modal-title" id="cancelarModalLabel-{{ parcela.id }}">Confirmar Cancelamento</h5>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>

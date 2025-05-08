@@ -1,0 +1,17 @@
+{% extends "base.html" %} {# Ou o seu template base específico para erros, se tiver #}
+
+{% block title %}Página Não Encontrada - {{ super() }}{% endblock %}
+
+{% block content %} {# Ou o nome do seu bloco de conteúdo principal #}
+    <div class="container text-center mt-5">
+        <h1 class="display-1">404</h1>
+        <h2>Oops! Página Não Encontrada</h2>
+        <p class="lead">
+            Desculpe, a página que você está procurando não existe.
+            Pode ter sido movida, excluída ou você pode ter digitado o endereço incorretamente.
+        </p>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary mt-3">
+            <i class="fas fa-home"></i> Voltar para a Página Inicial
+        </a>
+    </div>
+{% endblock %}

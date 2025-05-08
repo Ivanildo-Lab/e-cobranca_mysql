@@ -1,8 +1,10 @@
 # app/main/__init__.py
 from flask import Blueprint
 
+# Define o Blueprint 'main'. Este é o objeto 'bp' que será importado
+# pelo app/__init__.py principal e pelo routes.py dentro deste pacote.
 bp = Blueprint('main', __name__)
 
-from . import routes  # Importa o routes.py do mesmo diretório (app/main/)
-# Se você tiver forms.py em app/main/ e ele precisar ser parte da inicialização do bp, importe aqui também
-# Exemplo: from . import forms
+# Importa as rotas DEPOIS da definição do bp para evitar ciclos de importação.
+# As rotas definidas em routes.py usarão este 'bp'.
+from . import routes
