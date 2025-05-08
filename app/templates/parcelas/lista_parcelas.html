@@ -114,11 +114,67 @@
                     <a href="{{ url_for('main.editar_parcela', id=parcela.id) }}" class="btn btn-sm btn-outline-primary me-1">
                         Editar
                     </a>
-                    <!-- Modal Pagamento -->
-                    <div class="modal fade" id="pagarModal-{{ parcela.id }}" ... > ... </div>
-                     <!-- Modal Cancelamento -->
-                    <div class="modal fade" id="cancelarModal-{{ parcela.id }}" ...> ... </div>
-                {% endif %}
+                   <!-- Modal de Registro de Pagamento -->
+                   <div class="modal fade" id="pagarModal-{{ parcela.id }}" tabindex="-1" aria-labelledby="pagarModalLabel-{{ parcela.id }}" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <form method="POST" action="{{ url_for('main.registrar_pagamento', id=parcela.id) }}" id="form-pagamento-{{ parcela.id }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="pagarModalLabel-{{ parcela.id }}">Registrar Pagamento</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <p><strong>Cliente:</strong> {{ parcela.cliente_ref.nome }}</p>
+                                    <p><strong>Parcela:</strong> {{ parcela.numero_parcela }}</p>
+                                    <p><strong>Vencimento:</strong> {{ parcela.data_vencimento.strftime('%d/%m/%Y') }}</p>
+                                    <p><strong>Valor Original:</strong> R$ {{ '%.2f'|format(parcela.valor_parcela) }}</p>
+                                    <hr>
+                                    <div class="mb-3">
+                                        <label for="data_pagamento-{{ parcela.id }}" class="form-label">Data do Pagamento *</label>
+                                        <input type="date" id="data_pagamento-{{ parcela.id }}" name="data_pagamento" class="form-control" required
+                                               value="{{ date.today().strftime('%Y-%m-%d') }}">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="valor_pago-{{ parcela.id }}" class="form-label">Valor Pago (R$) *</label>
+                                        <input type="number" step="0.01" id="valor_pago-{{ parcela.id }}" name="valor_pago" class="form-control" required
+                                               value="{{ parcela.valor_parcela }}">
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                    <button type="submit" class="btn btn-success">Confirmar Pagamento</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                 <!-- Fim Modal Pagamento -->
+
+                <!-- Modal de Confirmação de Cancelamento -->
+                <div class="modal fade" id="cancelarModal-{{ parcela.id }}" tabindex="-1" aria-labelledby="cancelarModalLabel-{{ parcela.id }}" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <form method="POST" action="{{ url_for('main.cancelar_parcela', id=parcela.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="cancelarModalLabel-{{ parcela.id }}">Confirmar Cancelamento</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    Tem certeza que deseja cancelar a parcela "{{ parcela.numero_parcela }}" do cliente "{{ parcela.cliente_ref.nome }}"?
+                                    <br><small class="text-danger">Esta ação não pode ser desfeita facilmente.</small>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Voltar</button>
+                                    <button type="submit" class="btn btn-danger">Confirmar Cancelamento</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                 <!-- Fim Modal Cancelamento -->
+            {% endif %}
             </td>
         </tr>
         {% else %}

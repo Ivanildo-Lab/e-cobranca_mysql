@@ -575,7 +575,8 @@ def listar_parcelas():
              'valor_pago': total_valor_pago,
              'quantidade': count_parcelas
         },
-        StatusParcela=StatusParcela
+        StatusParcela=StatusParcela,
+        date=date
     )
 # --- FIM DA ROTA LISTAR PARCELAS ---
 
