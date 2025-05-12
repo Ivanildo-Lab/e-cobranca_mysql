@@ -1,0 +1,7 @@
+# .gitignore
+venv/
+__pycache__/
+*.pyc
+.env
+instance/ # Pasta que o Flask pode criar
+migrations/ # Opcional: Alguns preferem versionar, outros não.

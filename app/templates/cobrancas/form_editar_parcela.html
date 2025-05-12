@@ -1,0 +1,26 @@
+<!-- app/templates/parcelas/form_editar_parcela.html -->
+{% extends "base.html" %}
+{% from 'bootstrap5/form.html' import render_form %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>{{ title }}: {{ parcela.numero_parcela }}</h1>
+<hr>
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <p><strong>Cliente:</strong> {{ parcela.cliente_ref.nome }}</p>
+    </div>
+    <div class="col-md-6">
+         <p><strong>Status Atual:</strong> {{ parcela.status.value }}</p>
+    </div>
+</div>
+
+{# Renderiza o formulário de edição #}
+{{ render_form(form) }}
+
+{# Link para voltar para a lista #}
+<a href="{{ url_for('main.listar_parcelas') }}" class="btn btn-secondary mt-3">Cancelar Edição</a>
+
+{% endblock %}

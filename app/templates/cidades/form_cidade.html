@@ -1,0 +1,17 @@
+<!-- app/templates/cidades/form_cidade.html -->
+{% extends "base.html" %}
+{# Importa macros do Bootstrap para renderizar campos do formulário mais facilmente #}
+{% from 'bootstrap5/form.html' import render_form %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>{{ legend }}</h1>
+<hr>
+{# Renderiza o formulário usando a macro do Bootstrap #}
+{{ render_form(form) }}
+
+{# Link para voltar para a lista #}
+<a href="{{ url_for('main.listar_cidades') }}" class="btn btn-secondary mt-3">Cancelar</a>
+
+{% endblock %}

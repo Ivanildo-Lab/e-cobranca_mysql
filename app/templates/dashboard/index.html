@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">{{ title }}</h1>
+
+{# --- Linha dos Cards (REVISADA) --- #}
+<div class="row">
+
+    {# Card Mês/Ano Atual (Informativo) #}
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-info shadow h-100 py-2"> {# Cor Info #}
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                            Mês/Ano Corrente</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ nome_mes_atual }}</div> {# Exibe MM/YYYY #}
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-calendar-day fa-2x text-gray-300"></i> {# Ícone Calendário #}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Card A Receber no Mês Atual #}
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-primary shadow h-100 py-2"> {# Cor Primary #}
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                            A Receber no Mês </div> {# Atualiza título #}
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">R$ {{ "%.2f"|format(a_receber_mes_atual or 0.0) }}</div> {# Usa nova variável #}
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-file-invoice-dollar fa-2x text-gray-300"></i> {# Ícone Fatura #}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Card Recebido (Últimos 30 dias) - Mantido #}
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-success shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                            Recebido no Mês</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">R$ {{ "%.2f"|format(recebido_30_dias or 0.0) }}</div>
+                    </div>
+                    <div class="col-auto">
+                         <i class="fas fa-check-circle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Card Total Atrasado - Mantido #}
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-danger shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-danger text-uppercase mb-1">
+                            Total Atrasado</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">R$ {{ "%.2f"|format(total_atrasado or 0.0) }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-exclamation-triangle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{# --- Fim Linha dos Cards --- #}
+
+
+{# --- Linha do Gráfico (Mantida como estava) --- #}
+<div class="row mt-4">
+    <div class="col-lg-12">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Recebido vs. A Vencer (Últimos 6 Meses)</h6>
+            </div>
+            <div class="card-body">
+                <div class="chart-area" style="height: 320px;">
+                    <canvas id="recebimentosChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{# --- Fim Linha do Gráfico --- #}
+
+{% endblock %}
+
+{# --- Bloco de Scripts (Mantido como estava) --- #}
+{% block scripts %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', (event) => {
+    const chartData = {{ chart_data | tojson | safe }};
+    const ctx = document.getElementById('recebimentosChart').getContext('2d');
+    const recebimentosChart = new Chart(ctx, {
+        type: 'bar',
+        data: chartData,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return 'R$ ' + value.toLocaleString('pt-BR', { minimumFractionDigits: 2 }); } } } },
+            plugins: { tooltip: { callbacks: { label: function(context) { let label = context.dataset.label || ''; if (label) { label += ': '; } if (context.parsed.y !== null) { label += 'R$ ' + context.parsed.y.toLocaleString('pt-BR', { minimumFractionDigits: 2 }); } return label; } } } }
+        }
+    });
+  });
+</script>
+{% endblock %}

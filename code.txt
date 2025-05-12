@@ -1,0 +1,17 @@
+e-cobrancas/
+├── venv/                    # Criado pelo ambiente virtual
+├── app/                     # Onde ficará a lógica da aplicação
+│   ├── __init__.py          # Inicializador do pacote/fábrica do app
+│   ├── models.py            # Definição dos modelos do banco de dados
+│   ├── forms.py             # Definição dos formulários (WTForms)
+│   ├── routes.py            # Definição das rotas/views
+│   ├── static/              # Arquivos estáticos (CSS, JS, Imagens)
+│   │   └── css/
+│   │   └── js/
+│   └── templates/           # Templates HTML (Jinja2)
+│       └── base.html        # Template base
+├── migrations/              # Pasta para scripts de migração do DB (será criada pelo Flask-Migrate)
+├── .env                     # Arquivo para variáveis de ambiente (NÃO versionar)
+├── .gitignore               # Arquivo para ignorar arquivos no Git
+├── config.py                # Arquivo de configuração
+└── run.py                   # Script para executar a aplicação

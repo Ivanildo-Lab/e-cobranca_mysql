@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <style>
+        /* Copie/Adapte os estilos básicos dos outros PDFs */
+        body { font-family: sans-serif; font-size: 9pt; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 15px; page-break-inside: auto; }
+        tr { page-break-inside: avoid; page-break-after: auto; }
+        th, td { border: 1px solid #ddd; padding: 4px; text-align: left; font-size: 8pt; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        h1 { font-size: 16pt; margin-bottom: 10px; text-align: center;}
+        .report-filters { font-size: 8pt; margin-bottom: 15px; padding: 8px; border: 1px dashed #ccc; }
+        .report-filters strong { display: inline-block; min-width: 100px;}
+        .totals-summary { margin-top: 15px; border-top: 1px solid #333; padding-top: 10px; }
+        .totals-summary p { margin: 2px 0; text-align: right; font-size: 9pt;}
+        .totals-summary strong { float: left; }
+        .text-muted { color: #6c757d; }
+        .text-success { color: #198754; }
+        .text-primary { color: #0d6efd; }
+        .text-secondary { color: #6c757d; }
+        .text-danger { color: #dc3545; }
+        .text-dark { color: #212529; }
+        .text-decoration-line-through { text-decoration: line-through; }
+        .badge { display: inline-block; padding: .25em .5em; font-size: .70em; font-weight: 700; line-height: 1; color: #fff; text-align: center; white-space: nowrap; vertical-align: baseline; border-radius: .25rem; }
+        .bg-success { background-color: #198754 !important; }
+        .bg-primary { background-color: #0d6efd !important; }
+        .bg-secondary { background-color: #6c757d !important; }
+        .bg-danger { background-color: #dc3545 !important; }
+        .bg-dark { background-color: #212529 !important; }
+
+        @page {
+            size: A4 landscape; /* Tenta paisagem para mais espaço horizontal */
+            margin: 1cm;
+             /* Opcional: Rodapé com número da página */
+             @bottom-right { content: "Página " counter(page) " de " counter(pages); font-size: 8pt; color: #888; }
+        }
+    </style>
+</head>
+<body>
+    <h1>{{ title }}</h1>
+
+    {# Exibe os Filtros Aplicados #}
+    <div class="report-filters">
+        <strong>Filtros Aplicados:</strong><br>
+        <strong>Status:</strong> {{ filtros_info.status }} |
+        <strong>Cliente:</strong> {{ filtros_info.cliente }} |
+        <strong>Cidade:</strong> {{ filtros_info.cidade }} <br>
+        <strong>Vencimento:</strong> {{ filtros_info.venc_inicio or 'Início' }} até {{ filtros_info.venc_fim or 'Fim' }} |
+        <strong>Pagamento:</strong> {{ filtros_info.pag_inicio or 'Início' }} até {{ filtros_info.pag_fim or 'Fim' }}
+    </div>
+
+    {# Tabela de Parcelas (igual à do Extrato, mas iterando sobre 'parcelas') #}
+    {% if parcelas %}
+    <table>
+        <thead>
+            <tr>
+                <th>Cliente</th> {# Adicionado Cliente aqui #}
+                <th>Nº Parcela</th>
+                <th>Vencimento</th>
+                <th>Valor Parcela</th>
+                <th>Status</th>
+                <th>Data Pagto.</th>
+                <th>Valor Pago</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for parcela in parcelas %}
+             {# ... (Lógica de estilo e badge como antes) ... #}
+             {% set row_style = '' %}
+             {% if parcela.status == StatusParcela.LIQUIDADA %}
+                 {% set row_style = 'background-color: #d1e7dd;' %}
+             {% elif parcela.status == StatusParcela.CANCELADA %}
+                 {% set row_style = 'background-color: #e2e3e5; color: #6c757d; text-decoration: line-through;' %}
+             {% elif parcela.esta_vencida %}
+                  {% set row_style = 'background-color: #f8d7da;' %}
+             {% endif %}
+             <tr style="{{ row_style }}">
+                 <td>{{ parcela.cliente_ref.nome | truncate(25) }}</td> {# Exibe nome do cliente #}
+                 <td>{{ parcela.numero_parcela }}</td>
+                 <td>{{ parcela.data_vencimento.strftime('%d/%m/%Y') }}</td>
+                 <td>R$ {{ '%.2f'|format(parcela.valor_parcela) }}</td>
+                 <td>
+                      {% set status_color = 'secondary' %}
+                      {% set status_text = parcela.status.value %}
+                      {% if parcela.status == StatusParcela.LIQUIDADA %}
+                          {% set status_color = 'success' %}
+                      {% elif parcela.status == StatusParcela.ABERTA %}
+                          {% if parcela.esta_vencida %}
+                              {% set status_color = 'danger' %}
+                              {% set status_text = 'Atrasada' %}
+                          {% else %}
+                              {% set status_color = 'primary' %}
+                              {% set status_text = 'Aberta' %}
+                          {% endif %}
+                      {% elif parcela.status == StatusParcela.CANCELADA %}
+                           {% set status_color = 'dark' %}
+                      {% endif %}
+                      <span class="badge bg-{{ status_color }}">{{ status_text }}</span>
+                 </td>
+                 <td>{{ parcela.data_pagamento.strftime('%d/%m/%Y') if parcela.data_pagamento else '-' }}</td>
+                 <td>{{ ('R$ %.2f'|format(parcela.valor_pago)) if parcela.valor_pago is not none else '-' }}</td>
+             </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="text-align: center; color: #6c757d;">Nenhuma parcela encontrada com os filtros aplicados.</p>
+    {% endif %}
+
+    {# --- Resumo dos Totais --- #}
+    <div class="totals-summary">
+         <p><strong>Total Valor Parcelas (Listadas):</strong> <span>R$ {{ '%.2f'|format(totais.geral_parcela) }}</span></p>
+         <p><strong>Total Pago (Listado):</strong> <span class="text-success">R$ {{ '%.2f'|format(totais.pago) }}</span></p>
+         <p><strong>Total em Aberto (Listado):</strong> <span class="text-primary">R$ {{ '%.2f'|format(totais.aberto) }}</span></p>
+         <p><strong>Total Cancelado (Listado):</strong> <span class="text-secondary">R$ {{ '%.2f'|format(totais.cancelado) }}</span></p>
+    </div>
+    {# --- FIM Resumo dos Totais --- #}
+
+</body>
+</html>
