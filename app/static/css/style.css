@@ -1,0 +1,44 @@
+/* app/static/css/style.css */
+
+.navbar-custom-laranja {
+    background-color: #FFDAB9 !important; /* Exemplo de cor Pêssego (PeachPuff) - um laranja claro */
+    /* Outras cores laranja claro:
+       - #FFE4B5 (Moccasin)
+       - #FFDEAD (NavajoWhite)
+       - #FFF0E1 (Seashell mais alaranjado)
+       - Ou um valor hexadecimal específico que você tenha: #FFA07A (LightSalmon), #FFB74D (um laranja material design)
+    */
+}
+
+/*
+   Se o texto da navbar ficar difícil de ler com o novo fundo laranja claro,
+   você pode precisar ajustar as cores dos links e do texto.
+   Bootstrap usa variáveis CSS, o que facilita.
+   Se o laranja for claro o suficiente para precisar de texto escuro (como com navbar-light):
+*/
+.navbar-custom-laranja .navbar-brand,
+.navbar-custom-laranja .nav-link,
+.navbar-custom-laranja .navbar-toggler-icon {
+    color: rgba(0, 0, 0, 0.7) !important; /* Cor do texto mais escura, ajuste a opacidade */
+}
+
+.navbar-custom-laranja .nav-link:hover,
+.navbar-custom-laranja .nav-link:focus,
+.navbar-custom-laranja .navbar-brand:hover,
+.navbar-custom-laranja .navbar-brand:focus {
+    color: rgba(0, 0, 0, 0.9) !important; /* Cor do texto mais escura no hover/focus */
+}
+
+/* Se o laranja for escuro o suficiente para precisar de texto claro (como com navbar-dark):
+.navbar-custom-laranja .navbar-brand,
+.navbar-custom-laranja .nav-link,
+.navbar-custom-laranja .navbar-toggler-icon {
+    color: rgba(255, 255, 255, 0.85) !important;
+}
+.navbar-custom-laranja .nav-link:hover,
+.navbar-custom-laranja .nav-link:focus,
+.navbar-custom-laranja .navbar-brand:hover,
+.navbar-custom-laranja .navbar-brand:focus {
+    color: #ffffff !important;
+}
+*/

@@ -1,6 +1,10 @@
 <!doctype html>
 <html lang="pt-br">
   <head>
+    {# FAVICON #}
+    {#  Se o arquivo é favicon.ico e está em app/static/ #}
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+
     <!-- Meta tags Obrigatórias -->
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,10 +19,13 @@
     <title>{% block title %}e-Cobranças{% endblock %}</title>
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+    <nav class="navbar navbar-expand-lg navbar-light navbar-custom-laranja mb-4">
       <div class="container-fluid">
         {# Aponta o logo para o dashboard #}
-        <a class="navbar-brand" href="{{ url_for('main.dashboard') }}">e-Cobranças</a> {# Ajustaremos 'main.index' depois #}
+        <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.dashboard') }}">
+            <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logotipo e-Cobranças" width="30" height="30" class="d-inline-block align-text-top me-2">
+              e-Cobranças
+        </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
           <span class="navbar-toggler-icon"></span>
         </button>

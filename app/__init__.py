@@ -26,7 +26,7 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 def create_app(config_class=Config):
-    app = Flask(__name__)
+    app = Flask(__name__,static_folder='static')
     app.config.from_object(config_class)
 
     db.init_app(app)
@@ -73,7 +73,8 @@ def create_app(config_class=Config):
 
         if not os.path.exists('logs'):
             os.mkdir('logs')
-        file_handler = RotatingFileHandler('logs/e_cobranca.log', maxBytes=10240, backupCount=10)
+        file_handler = RotatingFileHandler('logs/e_cobranca.log', maxBytes=102400, backupCount=10) # Aumentado para 100KB
+
         file_handler.setFormatter(logging.Formatter(
             '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'))
         file_handler.setLevel(logging.INFO)

@@ -1,105 +1,230 @@
 # app/routes.py
-from flask import  render_template, request, flash, redirect, url_for
+# app/main/routes.py
+
+import requests  # Para Evolution API
+import json      # Para Evolution API
+from threading import Thread
+import uuid
+import random
+import locale
+from decimal import Decimal # Para garantir que valores monetários sejam tratados corretamente
+
+from flask import (render_template, request, flash, redirect, url_for, 
+                   current_app, make_response, jsonify) # Adicionado jsonify para teste API
+from flask_login import login_required, current_user # Adicionado current_user
+
 from app import db
 from sqlalchemy.orm import joinedload
-from datetime import date, datetime , timedelta # Garanta que datetime e date estão importados
-from dateutil.relativedelta import relativedelta # Importa relativedelta
-import uuid,random # Importa uuid se for usar cobranca_uuid
-from app.models import Parcela, StatusParcela, Cliente,Parcela, StatusParcela,Cidade # Garanta que Parcela e StatusParcela estão aqui
-from sqlalchemy import or_, and_ , func, extract # Importa 'and_' se for combinar condições complexas
+from sqlalchemy import or_, and_, func, extract
+from datetime import date, datetime, timedelta
+from dateutil.relativedelta import relativedelta
+
+from app.models import Parcela, StatusParcela, Cliente, Cidade, User # Adicionado User
 from app.forms import (CidadeForm, ClienteForm, GerarParcelasForm,
-                       RegistrarPagamentoForm, EditarParcelaForm,FiltroParcelasForm)
-import locale # Para formatação de datas em português
-# ... (Blueprint e outras rotas) ...
-from decimal import Decimal # Para garantir que valores monetários sejam tratados corretamente
-from flask import make_response # <-- Adicionar
-from weasyprint import HTML, CSS # <-- Adicionar
-from flask_login import login_required # Adiciona importação para proteger rotas
-from . import bp # Importa o Blueprint 'bp' definido em __init__.py
+                       RegistrarPagamentoForm, EditarParcelaForm, FiltroParcelasForm)
+from . import bp
 
-# Cria um Blueprint chamado 'main' (pode ter outro nome)
-# O primeiro argumento é o nome do Blueprint
-# O segundo é o nome do módulo ou pacote onde o Blueprint está localizado (__name__)
-# O terceiro (opcional) define um prefixo de URL para todas as rotas do Blueprint
+# locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8') # Opcional: se precisar de formatação de locale específica no backend
+
+# --- INÍCIO: Funções para Evolution API ---
+# app/main/routes.py (ou seu arquivo de serviço app/whatsapp_service.py)
+
+import requests
+import json
+from flask import current_app
+
+def enviar_mensagem_whatsapp_evolution(telefone_destino, mensagem_texto):
+    api_url = current_app.config.get('EVOLUTION_API_URL')
+    api_key_value = current_app.config.get('EVOLUTION_API_KEY_VALUE')
+    api_key_header_name = current_app.config.get('EVOLUTION_API_KEY_HEADER_NAME')
+
+    if not api_url:
+        current_app.logger.error("EVOLUTION_API_URL não configurada.")
+        return False, {"error": "URL da API de WhatsApp não configurada."}
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    auth_method_used = "Nenhuma"
+    if api_key_header_name and api_key_value:
+        headers[api_key_header_name] = api_key_value # Ex: headers["apikey"] = "4296..."
+        auth_method_used = f"API Key (Header: {api_key_header_name})"
+    else:
+        # Se você não configurar API_KEY_HEADER_NAME ou API_KEY_VALUE, ele tentará sem autenticação.
+        # Para sua API, isso resultaria em 401 Unauthorized, então é crucial que estejam configurados.
+        current_app.logger.error("API Key ou nome do header da API Key não configurados para Evolution API.")
+        return False, {"error": "Configuração de autenticação da API de WhatsApp ausente."}
 
 
-# Rota para a página inicial (exemplo, pode ser um dashboard depois)
+    payload = {
+        "number": telefone_destino,
+        "text": mensagem_texto
+        }
+
+    try:
+        current_app.logger.info(f"Tentando enviar WhatsApp (Evolution API) para {telefone_destino} na URL: {api_url} usando autenticação: {auth_method_used}")
+        current_app.logger.debug(f"Payload: {json.dumps(payload)}")
+        current_app.logger.debug(f"Headers: {headers}")
+
+        response = requests.post(api_url, headers=headers, data=json.dumps(payload), timeout=30)
+        
+        current_app.logger.info(f"Evolution API response status: {response.status_code}")
+        current_app.logger.info(f"Evolution API response text: {response.text}")
+
+        # Não precisa de response.raise_for_status() aqui se vamos checar o status code abaixo
+        # e retornar os detalhes do erro. Se quiser que ele sempre lance exceção para 4xx/5xx, pode manter.
+
+        response_data = {} # Inicializa com um dict vazio
+        try:
+            response_data = response.json()
+            current_app.logger.info(f"Evolution API response JSON para {telefone_destino}: {response_data}")
+        except json.JSONDecodeError:
+            current_app.logger.warning(f"Resposta da Evolution API para {telefone_destino} não foi JSON válido: {response.text}")
+            if response.status_code < 300: # Se o status for sucesso mas o corpo não for JSON
+                return True, {"raw_response": response.text, "status_code": response.status_code}
+
+        if response.status_code in [200, 201]: # Sucesso
+            return True, response_data
+        else: # Erro retornado pela API (ex: 400, 401, 403, 500)
+            current_app.logger.error(f"Erro da Evolution API ao enviar para {telefone_destino} (Status: {response.status_code}): {response_data.get('error', response.text)}")
+            return False, response_data
+            
+    except requests.exceptions.HTTPError as http_err: # Capturado por raise_for_status, ou se você o remover, não será pego aqui.
+        error_details = http_err.response.text if http_err.response else 'N/A'
+        current_app.logger.error(f"HTTP error ao enviar via Evolution API para {telefone_destino} (Auth: {auth_method_used}): {http_err} - Resposta: {error_details}")
+        return False, {"error": f"HTTP Error: {http_err.response.status_code if http_err.response else 'N/A'}", "details": error_details}
+    except requests.exceptions.ConnectionError as conn_err:
+        current_app.logger.error(f"Connection error ao conectar na Evolution API ({api_url}): {conn_err}")
+        return False, {"error": f"Não foi possível conectar à API de WhatsApp: {str(conn_err)}"}
+    except requests.exceptions.RequestException as req_err:
+        current_app.logger.error(f"Request error ao enviar via Evolution API para {telefone_destino} (Auth: {auth_method_used}): {req_err}")
+        return False, {"error": str(req_err)}
+    except Exception as e_gen:
+        current_app.logger.error(f"Erro inesperado ao enviar via Evolution API para {telefone_destino} (Auth: {auth_method_used}): {e_gen}")
+        return False, {"error": str(e_gen)}
+    
+def enviar_whatsapp_evolution_em_background(app_context, telefone, mensagem):
+    with app_context.app_context(): 
+        sucesso, detalhes_api = enviar_mensagem_whatsapp_evolution(telefone, mensagem)
+        if sucesso:
+            id_mensagem_enviada = "N/A"
+            if isinstance(detalhes_api, dict) and 'key' in detalhes_api and isinstance(detalhes_api['key'], dict):
+                id_mensagem_enviada = detalhes_api['key'].get('id', 'N/A')
+            
+            app_context.logger.info(f"THREAD: Mensagem para {telefone} enviada/enfileirada via Evolution API. ID da Mensagem: {id_mensagem_enviada}")
+        else:
+            app_context.logger.error(f"THREAD: Falha ao enviar mensagem para {telefone} via Evolution API. Detalhes: {detalhes_api}")
+# --- FIM: Funções para Evolution API ---
+
+# --- FUNÇÃO HELPER PARA AGRUPAR PARCELAS ---
+def agrupar_parcelas_abertas_por_cliente(lista_de_parcelas_filtradas):
+    clientes_com_parcelas_abertas = {}
+    for parcela in lista_de_parcelas_filtradas:
+        if parcela.status == StatusParcela.ABERTA: # Apenas parcelas ABERTAS (podem estar vencidas ou a vencer)
+            cliente = parcela.cliente_ref
+            if cliente not in clientes_com_parcelas_abertas:
+                clientes_com_parcelas_abertas[cliente] = {'parcelas': [], 'total_devido': Decimal('0.00')}
+            clientes_com_parcelas_abertas[cliente]['parcelas'].append(parcela)
+            clientes_com_parcelas_abertas[cliente]['total_devido'] += parcela.valor_parcela
+    return clientes_com_parcelas_abertas
+# --- FIM FUNÇÃO HELPER ---
+
+# --- FUNÇÃO HELPER PARA CONSTRUIR QUERY DE FILTRO ---
+def _construir_query_parcelas_filtradas(filtros_dict):
+    status_filter = filtros_dict.get('status', 'aberta')
+    
+    cliente_id_str = filtros_dict.get('cliente_id') or filtros_dict.get('cliente') # Tenta 'cliente_id' ou 'cliente'
+    cliente_id_filter = None
+    if cliente_id_str and cliente_id_str != '' and cliente_id_str != '__None':
+        try:
+            cliente_id_filter = int(cliente_id_str)
+        except ValueError:
+            current_app.logger.warning(f"Valor inválido para cliente_id no filtro: {cliente_id_str}")
+
+    cidade_id_str = filtros_dict.get('cidade_id') or filtros_dict.get('cidade')
+    cidade_id_filter = None
+    if cidade_id_str and cidade_id_str != '' and cidade_id_str != '__None':
+        try:
+            cidade_id_filter = int(cidade_id_str)
+        except ValueError:
+            current_app.logger.warning(f"Valor inválido para cidade_id no filtro: {cidade_id_str}")
+
+    venc_inicio_str = filtros_dict.get('venc_inicio', '')
+    venc_fim_str = filtros_dict.get('venc_fim', '')
+    pag_inicio_str = filtros_dict.get('pag_inicio', '')
+    pag_fim_str = filtros_dict.get('pag_fim', '')
+
+    venc_inicio_f, venc_fim_f, pag_inicio_f, pag_fim_f = None, None, None, None
+    try:
+        if venc_inicio_str: venc_inicio_f = datetime.strptime(venc_inicio_str, '%Y-%m-%d').date()
+        if venc_fim_str: venc_fim_f = datetime.strptime(venc_fim_str, '%Y-%m-%d').date()
+        if pag_inicio_str: pag_inicio_f = datetime.strptime(pag_inicio_str, '%Y-%m-%d').date()
+        if pag_fim_str: pag_fim_f = datetime.strptime(pag_fim_str, '%Y-%m-%d').date()
+    except ValueError:
+        current_app.logger.warning("Formato de data inválido recebido nos filtros da query.")
+        # Não define as datas se o formato for inválido, efetivamente ignorando o filtro de data
+        pass 
+
+    query = Parcela.query.options(joinedload(Parcela.cliente_ref).joinedload(Cliente.cidade_ref))
+    query = query.join(Cliente, Parcela.cliente_id == Cliente.id).filter(Cliente.ativo == True)
+    hoje = date.today()
+
+    if status_filter == 'aberta':
+        query = query.filter(Parcela.status == StatusParcela.ABERTA, Parcela.data_vencimento >= hoje)
+    elif status_filter == 'atrasada':
+        query = query.filter(Parcela.status == StatusParcela.ABERTA, Parcela.data_vencimento < hoje)
+    elif status_filter == 'liquidada':
+        query = query.filter(Parcela.status == StatusParcela.LIQUIDADA)
+    elif status_filter == 'cancelada':
+        query = query.filter(Parcela.status == StatusParcela.CANCELADA)
+    
+    if cliente_id_filter: query = query.filter(Parcela.cliente_id == cliente_id_filter)
+    if cidade_id_filter: query = query.filter(Cliente.cidade_id == cidade_id_filter)
+    if venc_inicio_f: query = query.filter(Parcela.data_vencimento >= venc_inicio_f)
+    if venc_fim_f: query = query.filter(Parcela.data_vencimento <= venc_fim_f)
+    if pag_inicio_f: query = query.filter(Parcela.data_pagamento != None, Parcela.data_pagamento >= pag_inicio_f)
+    if pag_fim_f: query = query.filter(Parcela.data_pagamento != None, Parcela.data_pagamento <= pag_fim_f)
+    
+    return query, status_filter
+# --- FIM FUNÇÃO HELPER QUERY ---
+
+# --- ROTAS PRINCIPAIS ---
 @bp.route('/')
 @bp.route('/index')
-@bp.route('/dashboard') # Adiciona alias /dashboard
-@login_required # Protege a rota, requer login
+@bp.route('/dashboard')
+@login_required
 def dashboard():
     hoje = date.today()
-    mes_atual = hoje.month
     ano_atual = hoje.year
+    mes_atual_num = hoje.month
     
-    hoje = date.today()
-    mes_atual_num = hoje.month # Pega o número do mês
-    ano_atual = hoje.year
-    # ... (outros cálculos de data) ...
-
-    # --- Mapeamento de Mês ---
-    meses_pt = {
-        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril',
-        5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto',
-        9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
-    }
-    nome_mes_atual = meses_pt.get(mes_atual_num, str(mes_atual_num)) # Pega nome ou número se der erro
+    meses_pt = {1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
+    nome_mes_atual = meses_pt.get(mes_atual_num, str(mes_atual_num))
     mes_ano_formatado = f"{nome_mes_atual}/{ano_atual}"
-    # -------------------------
 
-    # 1. A Receber no Mês Atual
-    a_receber_mes_atual = db.session.query(func.sum(Parcela.valor_parcela)) \
-                            .join(Cliente, Parcela.cliente_id == Cliente.id) \
-                            .filter(Cliente.ativo == True,
-                                    Parcela.status == StatusParcela.ABERTA,
-                                    extract('year', Parcela.data_vencimento) == ano_atual,
-                                    extract('month', Parcela.data_vencimento) == mes_atual).scalar() or 0.0
-
-    # 2. Recebido nos Últimos 30 Dias
-    recebido_30_dias = db.session.query(func.sum(Parcela.valor_pago)) \
-                         .join(Cliente, Parcela.cliente_id == Cliente.id) \
-                         .filter(Cliente.ativo == True,
-                                 Parcela.status == StatusParcela.LIQUIDADA,
-                                    extract('year', Parcela.data_vencimento) == ano_atual,
-                                    extract('month', Parcela.data_vencimento) == mes_atual).scalar() or 0.0
-
-    # 3. Total Atrasado
-    total_atrasado = db.session.query(func.sum(Parcela.valor_parcela)) \
-                       .join(Cliente, Parcela.cliente_id == Cliente.id) \
-                       .filter(Cliente.ativo == True,
-                               Parcela.status == StatusParcela.ABERTA,
-                               Parcela.data_vencimento < hoje).scalar() or 0.0
-
+    a_receber_mes_atual = db.session.query(func.sum(Parcela.valor_parcela)).join(Cliente, Parcela.cliente_id == Cliente.id).filter(Cliente.ativo == True, Parcela.status == StatusParcela.ABERTA, extract('year', Parcela.data_vencimento) == ano_atual, extract('month', Parcela.data_vencimento) == mes_atual_num).scalar() or Decimal('0.0')
     
-    # --- Dados para o Gráfico (Ex: Recebido vs A Vencer últimos 6 meses) ---
-    labels_chart = []
-    data_recebido_chart = []
-    data_a_vencer_chart = []
+    # Ajuste para 'recebido_30_dias' - se refere a parcelas PAGAS no mês atual
+    # Ou se refere a parcelas com data de PAGAMENTO nos últimos 30 dias? Vou assumir PAGAS NO MÊS ATUAL.
+    # Se for últimos 30 dias a partir de hoje, a lógica de data é diferente.
+    recebido_mes_atual = db.session.query(func.sum(Parcela.valor_pago)).join(Cliente, Parcela.cliente_id == Cliente.id).filter(Cliente.ativo == True, Parcela.status == StatusParcela.LIQUIDADA, extract('year', Parcela.data_pagamento) == ano_atual, extract('month', Parcela.data_pagamento) == mes_atual_num).scalar() or Decimal('0.0')
 
-    for i in range(5, -1, -1): # Loop de 6 meses atrás até o mês atual
+    total_atrasado = db.session.query(func.sum(Parcela.valor_parcela)).join(Cliente, Parcela.cliente_id == Cliente.id).filter(Cliente.ativo == True, Parcela.status == StatusParcela.ABERTA, Parcela.data_vencimento < hoje).scalar() or Decimal('0.0')
+    
+    labels_chart, data_recebido_chart, data_a_vencer_chart = [], [], []
+    for i in range(5, -1, -1):
         mes_referencia = hoje - relativedelta(months=i)
-        mes_str = mes_referencia.strftime("%m/%Y")
-        labels_chart.append(mes_str)
-        ano_ref = mes_referencia.year
-        mes_ref = mes_referencia.month
-
-        # Query base para clientes ativos (repetida aqui para clareza no gráfico)
-        base_chart_query = Parcela.query.join(Cliente, Parcela.cliente_id == Cliente.id).filter(Cliente.ativo == True)
-
-        # A Vencer no mês
-        a_vencer_mes = db.session.query(func.sum(Parcela.valor_parcela)).select_from(base_chart_query) \
-                        .filter(Parcela.status == StatusParcela.ABERTA,
-                                extract('year', Parcela.data_vencimento) == ano_ref,
-                                extract('month', Parcela.data_vencimento) == mes_ref).scalar() or 0.0
+        labels_chart.append(mes_referencia.strftime("%m/%Y"))
+        ano_ref, mes_ref = mes_referencia.year, mes_referencia.month
+        
+        q_base_chart = Parcela.query.join(Cliente, Parcela.cliente_id == Cliente.id).filter(Cliente.ativo == True)
+        
+        a_vencer_mes = db.session.query(func.sum(Parcela.valor_parcela)).select_from(q_base_chart).filter(Parcela.status == StatusParcela.ABERTA, extract('year', Parcela.data_vencimento) == ano_ref, extract('month', Parcela.data_vencimento) == mes_ref).scalar() or 0.0
         data_a_vencer_chart.append(float(a_vencer_mes))
-
-        # Recebido no mês
-        recebido_mes = db.session.query(func.sum(Parcela.valor_pago)).select_from(base_chart_query) \
-                         .filter(Parcela.status == StatusParcela.LIQUIDADA,
-                                 extract('year', Parcela.data_pagamento) == ano_ref,
-                                 extract('month', Parcela.data_pagamento) == mes_ref).scalar() or 0.0
-        data_recebido_chart.append(float(recebido_mes))
+        
+        recebido_mes_grafico = db.session.query(func.sum(Parcela.valor_pago)).select_from(q_base_chart).filter(Parcela.status == StatusParcela.LIQUIDADA, extract('year', Parcela.data_pagamento) == ano_ref, extract('month', Parcela.data_pagamento) == mes_ref).scalar() or 0.0
+        data_recebido_chart.append(float(recebido_mes_grafico))
 
     chart_data = {
         'labels': labels_chart,
@@ -108,145 +233,93 @@ def dashboard():
              {'label': 'Valor a Vencer', 'backgroundColor': 'rgba(255, 159, 64, 0.5)', 'borderColor': 'rgb(255, 159, 64)', 'data': data_a_vencer_chart, 'borderWidth': 1}
         ]
     }
+    return render_template('dashboard/index.html', title='e-Cobranças - Dashboard', mes_ano_atual=hoje.strftime("%m/%Y"), a_receber_mes_atual=a_receber_mes_atual, recebido_30_dias=recebido_mes_atual, total_atrasado=total_atrasado, nome_mes_atual=mes_ano_formatado, chart_data=chart_data)
 
-    return render_template(
-        'dashboard/index.html',
-        title='e-Cobranças - Dashboard',
-        # Novos/Ajustados valores para os cards
-        mes_ano_atual=hoje.strftime("%m/%Y"), # Passa MM/YYYY atual
-        a_receber_mes_atual=a_receber_mes_atual,
-        recebido_30_dias=recebido_30_dias,
-        total_atrasado=total_atrasado,
-        nome_mes_atual=mes_ano_formatado, # Passa o mês/ano formatado
-        chart_data=chart_data
-    )
-
-# Rota para LISTAR Cidades
+# --- ROTAS DE CIDADES ---
 @bp.route('/cidades')
 @bp.route('/cidades/lista')
+@login_required
 def listar_cidades():
-    page = request.args.get('page', 1, type=int) # Pega o número da página da URL, default é 1
-    # Busca cidades ordenadas por nome e pagina o resultado (ex: 10 por página)
-    cidades = Cidade.query.order_by(Cidade.nome_cidade).paginate(page=page, per_page=10)
-    return render_template('cidades/lista_cidades.html', cidades=cidades, title='e-Cobranças  - Lista de Cidades')
+    page = request.args.get('page', 1, type=int)
+    cidades = Cidade.query.order_by(Cidade.nome_cidade).paginate(page=page, per_page=10, error_out=False)
+    return render_template('cidades/lista_cidades.html', cidades=cidades, title='e-Cobranças - Lista de Cidades')
 
-# Rota para ADICIONAR Nova Cidade (GET para mostrar formulário, POST para processar)
 @bp.route('/cidades/novo', methods=['GET', 'POST'])
-@login_required # Protege a rota, requer login
+@login_required
 def adicionar_cidade():
     form = CidadeForm()
-    if form.validate_on_submit(): # Valida o formulário no POST
-        # Cria uma nova instância do modelo Cidade com os dados do formulário
-        nova_cidade = Cidade(nome_cidade=form.nome_cidade.data, estado=form.estado.data)
-        db.session.add(nova_cidade) # Adiciona ao banco de dados (ainda não salva)
-        try:
-            db.session.commit() # Salva as mudanças no banco
-            flash(f'Cidade "{nova_cidade.nome_cidade}/{nova_cidade.estado}" adicionada com sucesso!', 'success')
-            return redirect(url_for('main.listar_cidades')) # Redireciona para a lista
-        except Exception as e:
-            db.session.rollback() # Desfaz em caso de erro
-            flash(f'Erro ao adicionar cidade: {e}', 'danger')
-    # Se for GET ou se o formulário não for válido, renderiza o template do formulário
-    return render_template('cidades/form_cidade.html', form=form, title='e-Cobranças  - Adicionar Nova Cidade', legend='Nova Cidade')
-
-# Rota para EDITAR Cidade Existente (GET para mostrar form preenchido, POST para processar)
-@bp.route('/cidades/<int:id>/editar', methods=['GET', 'POST'])
-@login_required # Protege a rota, requer login
-def editar_cidade(id):
-    cidade = db.get_or_404(Cidade, id) # Busca a cidade pelo ID ou retorna erro 404
-    form = CidadeForm(obj=cidade) # Pré-popula o formulário com os dados da cidade
-
     if form.validate_on_submit():
-        # Atualiza os campos da cidade com os dados do formulário
+        nova_cidade = Cidade(nome_cidade=form.nome_cidade.data, estado=form.estado.data)
+        db.session.add(nova_cidade)
+        try:
+            db.session.commit()
+            flash(f'Cidade "{nova_cidade.nome_cidade}/{nova_cidade.estado}" adicionada com sucesso!', 'success')
+            return redirect(url_for('main.listar_cidades'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Erro ao adicionar cidade: {str(e)}', 'danger')
+    return render_template('cidades/form_cidade.html', form=form, title='e-Cobranças - Adicionar Cidade', legend='Nova Cidade')
+
+@bp.route('/cidades/<int:id>/editar', methods=['GET', 'POST'])
+@login_required
+def editar_cidade(id):
+    cidade = db.get_or_404(Cidade, id)
+    form = CidadeForm(obj=cidade)
+    if form.validate_on_submit():
         cidade.nome_cidade = form.nome_cidade.data
         cidade.estado = form.estado.data
         try:
-            db.session.commit() # Salva as alterações
+            db.session.commit()
             flash(f'Cidade "{cidade.nome_cidade}/{cidade.estado}" atualizada com sucesso!', 'success')
             return redirect(url_for('main.listar_cidades'))
         except Exception as e:
             db.session.rollback()
-            flash(f'Erro ao atualizar cidade: {e}', 'danger')
-    # Se for GET, mostra o formulário preenchido
-    return render_template('cidades/form_cidade.html', form=form, title='e-Cobranças  - Editar Cidade', legend=f'Editando: {cidade.nome_cidade}')
+            flash(f'Erro ao atualizar cidade: {str(e)}', 'danger')
+    return render_template('cidades/form_cidade.html', form=form, title='e-Cobranças - Editar Cidade', legend=f'Editando: {cidade.nome_cidade}')
 
-# Rota para DELETAR Cidade (usaremos POST para segurança)
 @bp.route('/cidades/<int:id>/deletar', methods=['POST'])
-@login_required # Protege a rota, requer login
+@login_required
 def deletar_cidade(id):
     cidade = db.get_or_404(Cidade, id)
-
-    # Verifica se existem clientes associados a esta cidade antes de deletar
-    if cidade.clientes.first(): # .first() é eficiente, não carrega todos os clientes
+    if cidade.clientes.first():
          flash(f'Não é possível excluir a cidade "{cidade.nome_cidade}/{cidade.estado}" pois existem clientes cadastrados nela.', 'warning')
          return redirect(url_for('main.listar_cidades'))
-
     try:
         nome_cidade_deletada = f"{cidade.nome_cidade}/{cidade.estado}"
-        db.session.delete(cidade) # Marca para deleção
-        db.session.commit() # Efetiva a deleção
+        db.session.delete(cidade)
+        db.session.commit()
         flash(f'Cidade "{nome_cidade_deletada}" excluída com sucesso!', 'success')
     except Exception as e:
         db.session.rollback()
-        flash(f'Erro ao excluir cidade: {e}', 'danger')
+        flash(f'Erro ao excluir cidade: {str(e)}', 'danger')
     return redirect(url_for('main.listar_cidades'))
 
 # --- ROTAS DE CLIENTES ---
-
 @bp.route('/clientes')
-@login_required # Protege a rota, requer login
+@login_required
 def listar_clientes():
     page = request.args.get('page', 1, type=int)
     search_query = request.args.get('q', '')
-    # --- Pega o filtro de status, default 'ativos' ---
     status_filter = request.args.get('status', 'ativos')
-
-    query = Cliente.query.options(joinedload(Cliente.cidade_ref)) # Query base
-
-    # --- Aplica filtro de STATUS ---
-    if status_filter == 'ativos':
-        query = query.filter(Cliente.ativo == True)
-    elif status_filter == 'inativos':
-        query = query.filter(Cliente.ativo == False)
-    # Se for 'todos', nenhum filtro de status é aplicado
-    # --- FIM Filtro STATUS ---
-
-    # Aplica filtro de BUSCA (depois do status)
+    query = Cliente.query.options(joinedload(Cliente.cidade_ref))
+    if status_filter == 'ativos': query = query.filter(Cliente.ativo == True)
+    elif status_filter == 'inativos': query = query.filter(Cliente.ativo == False)
     if search_query:
         search_term = f"%{search_query}%"
-        query = query.filter(
-            or_(
-                Cliente.nome.ilike(search_term),
-                Cliente.contato.ilike(search_term)
-            )
-        )
-
-    # Ordenação e paginação
+        query = query.filter(or_(Cliente.nome.ilike(search_term), Cliente.contato.ilike(search_term)))
     clientes = query.order_by(Cliente.nome).paginate(page=page, per_page=10, error_out=False)
+    return render_template('clientes/lista_clientes.html', clientes=clientes, title='e-Cobranças - Lista de Clientes', search_query=search_query, status_filter=status_filter)
 
-    # Passa clientes paginados para o template
-    # O template acessa 'q' e 'status' diretamente de 'request.args'
-    return render_template('clientes/lista_clientes.html', clientes=clientes, title='e-Cobranças  - Lista de Clientes')
-
-# ... (rotas adicionar_cliente, editar_cliente, deletar_cliente) ...
-# Rota para ADICIONAR Novo Cliente
 @bp.route('/clientes/novo', methods=['GET', 'POST'])
-@login_required # Protege a rota, requer login
+@login_required
 def adicionar_cliente():
     form = ClienteForm()
     if form.validate_on_submit():
         novo_cliente = Cliente(
-            nome=form.nome.data,
-            contato=form.contato.data,
-            conexao=form.conexao.data,
-            endereco=form.endereco.data,
-            cidade_id=form.cidade.data.id,
-            telefone=form.telefone.data,
-            email=form.email.data,
-            valor_mensalidade=form.valor_mensalidade.data,
-            dia_cobranca=form.dia_cobranca.data,
-            obs=form.obs.data,
-            ativo=form.ativo.data  
+            nome=form.nome.data, contato=form.contato.data, conexao=form.conexao.data,
+            endereco=form.endereco.data, cidade_id=form.cidade.data.id, telefone=form.telefone.data,
+            email=form.email.data, valor_mensalidade=form.valor_mensalidade.data,
+            dia_cobranca=form.dia_cobranca.data, obs=form.obs.data, ativo=form.ativo.data
         )
         db.session.add(novo_cliente)
         try:
@@ -255,473 +328,329 @@ def adicionar_cliente():
             return redirect(url_for('main.listar_clientes'))
         except Exception as e:
             db.session.rollback()
-            flash(f'Erro ao adicionar cliente: {e}', 'danger')
-    return render_template('clientes/form_cliente.html', form=form, title='e-Cobranças  - Adicionar Novo Cliente', legend='Novo Cliente')
+            flash(f'Erro ao adicionar cliente: {str(e)}', 'danger')
+    return render_template('clientes/form_cliente.html', form=form, title='e-Cobranças - Adicionar Cliente', legend='Novo Cliente')
 
-# Rota para EDITAR Cliente Existente
 @bp.route('/clientes/<int:id>/editar', methods=['GET', 'POST'])
-@login_required # Protege a rota, requer login
+@login_required
 def editar_cliente(id):
     cliente = db.get_or_404(Cliente, id)
-    # Pré-popula o formulário com dados do objeto cliente (incluindo os novos campos)
     form = ClienteForm(obj=cliente)
-
-    # Garante que a cidade correta esteja selecionada no GET (ainda necessário para QuerySelectField)
     if request.method == 'GET':
          form.cidade.data = cliente.cidade_ref
-
     if form.validate_on_submit():
-        # Atualiza todos os campos do cliente com os dados do formulário
-        cliente.nome = form.nome.data
-        cliente.endereco = form.endereco.data
-        cliente.cidade_id = form.cidade.data.id
-        # --- Atualizando novos campos ---
-        cliente.ativo = form.ativo.data
-        cliente.contato = form.contato.data
-        cliente.conexao = form.conexao.data
-        cliente.valor_mensalidade = form.valor_mensalidade.data
-        cliente.dia_cobranca = form.dia_cobranca.data
-        cliente.obs = form.obs.data
-        # --- Fim novos campos ---
+        form.populate_obj(cliente) # Popula o objeto cliente com dados do form
+        cliente.cidade_id = form.cidade.data.id # Atribuição manual para QuerySelectField
         try:
             db.session.commit()
             flash(f'Cliente "{cliente.nome}" atualizado com sucesso!', 'success')
             return redirect(url_for('main.listar_clientes'))
         except Exception as e:
             db.session.rollback()
-            flash(f'Erro ao atualizar cliente: {e}', 'danger')
-
-    return render_template('clientes/form_cliente.html', form=form, title='e-Cobranças  - Editar Cliente', legend=f'Editando: {cliente.nome}')
-
-# Rota para DESATIVAR Cliente (antiga deletar_cliente)
+            flash(f'Erro ao atualizar cliente: {str(e)}', 'danger')
+    return render_template('clientes/form_cliente.html', form=form, title='e-Cobranças - Editar Cliente', legend=f'Editando: {cliente.nome}')
 
 @bp.route('/clientes/<int:id>/desativar', methods=['POST'])
-@login_required # Protege a rota, requer login
+@login_required
 def desativar_cliente(id):
     cliente = db.get_or_404(Cliente, id)
-
-
     try:
         nome_cliente_desativado = cliente.nome
-        # --- LÓGICA PRINCIPAL: Mudar o status para False ---
         cliente.ativo = False
-        db.session.commit() # Salva a alteração do status
-        # --- FIM LÓGICA PRINCIPAL ---
-        flash(f'Cliente "{nome_cliente_desativado}" desativado com sucesso!', 'success') # Mensagem atualizada
+        db.session.commit()
+        flash(f'Cliente "{nome_cliente_desativado}" desativado com sucesso!', 'success')
     except Exception as e:
         db.session.rollback()
-        flash(f'Erro ao desativar cliente: {e}', 'danger') # Mensagem atualizada
+        flash(f'Erro ao desativar cliente: {str(e)}', 'danger')
     return redirect(url_for('main.listar_clientes'))
 
-# --- ROTA PARA GERAR PARCELAS ---
+# --- ROTAS DE COBRANÇAS/PARCELAS ---
 @bp.route('/cobrancas/gerar', methods=['GET', 'POST'])
-@login_required # Protege a rota, requer login
+@login_required
 def gerar_parcelas():
     form = GerarParcelasForm()
     if form.validate_on_submit():
-        cliente_selecionado = form.cliente.data # Objeto Cliente
+        cliente_selecionado = form.cliente.data
         valor = form.valor_parcela.data
         quantidade = form.quantidade_parcelas.data
-        primeira_data = form.primeiro_vencimento.data # Já é um objeto date
+        primeira_data = form.primeiro_vencimento.data
         periodicidade = form.periodicidade.data
-        data_geracao = datetime.utcnow() # Data/Hora atual para todas as parcelas geradas
-        cobranca_id_unico = str(uuid.uuid4()) # Gera um ID único para este lote de parcelas (se usar o campo)
-        random_part = random.randint(100000, 999999) # Gera um número de 6 dígitos
+        data_geracao = datetime.utcnow()
+        cobranca_id_unico = str(uuid.uuid4())
+        random_part = random.randint(100000, 999999)
         try:
             for i in range(quantidade):
-                numero_sequencial = i + 1 # Sequencial da parcela (1, 2, 3...)
+                numero_sequencial = i + 1
                 data_vencimento_parcela = primeira_data
-
-                # Calcula próxima data de vencimento (exceto para a primeira)
-                if i > 0:
-                    if periodicidade == 'mensal':
-                        # Adiciona 'i' meses à primeira data
-                        data_vencimento_parcela = primeira_data + relativedelta(months=i)
-                    # Adicionar outras lógicas de periodicidade aqui (quinzenal, semanal, etc.)
-                    # elif periodicidade == 'quinzenal':
-                    #    data_vencimento_parcela = primeira_data + relativedelta(days=15*i) # Exemplo simples
- 
-               # --- CONSTRÓI O NÚMERO DA PARCELA FORMATADO ---
+                if i > 0 and periodicidade == 'mensal':
+                    data_vencimento_parcela = primeira_data + relativedelta(months=i)
                 numero_parcela_formatado = f"{random_part}-{numero_sequencial}/{quantidade}"
-                # --- FIM CONSTRUÇÃO ---
-
-                # Cria a instância da Parcela
                 nova_parcela = Parcela(
-                    cobranca_uuid=cobranca_id_unico, # Atribui o ID do lote (se usar)
-                    cliente_id=cliente_selecionado.id,
-                    numero_parcela=numero_parcela_formatado,
-                    total_parcelas=quantidade,
-                    valor_parcela=valor,
-                    data_geracao=data_geracao,
-                    data_vencimento=data_vencimento_parcela,
-                    status=StatusParcela.ABERTA # Status inicial
-                    # data_pagamento e valor_pago ficam nulos
+                    cobranca_uuid=cobranca_id_unico, cliente_id=cliente_selecionado.id,
+                    numero_parcela=numero_parcela_formatado, total_parcelas=quantidade,
+                    valor_parcela=valor, data_geracao=data_geracao,
+                    data_vencimento=data_vencimento_parcela, status=StatusParcela.ABERTA
                 )
                 db.session.add(nova_parcela)
-
-            db.session.commit() # Salva todas as parcelas geradas no banco
+            db.session.commit()
             flash(f'{quantidade} parcelas geradas com sucesso para o cliente {cliente_selecionado.nome}!', 'success')
-            # Redireciona para a lista de clientes ou para uma futura lista de parcelas
-            return redirect(url_for('main.listar_clientes')) # Ou 'main.listar_parcelas'
-
+            return redirect(url_for('main.listar_parcelas')) # Alterado para listar_parcelas
         except Exception as e:
-            db.session.rollback() # Desfaz tudo em caso de erro
-            flash(f'Erro ao gerar parcelas: {e}', 'danger')
+            db.session.rollback()
+            flash(f'Erro ao gerar parcelas: {str(e)}', 'danger')
+    return render_template('cobrancas/gerar_parcelas.html', form=form, title='e-Cobranças - Gerar Parcelas')
 
-    # Se for GET ou o formulário for inválido
-    return render_template('cobrancas/gerar_parcelas.html', form=form, title='e-Cobranças  - Gerar Novas Parcelas')
-
-
-# --- ROTA PARA REGISTRAR PAGAMENTO ---
-
-# app/routes.py
-# ... (outras importações) ...
-# Adiciona o novo formulário
-from app.forms import CidadeForm, ClienteForm, GerarParcelasForm, RegistrarPagamentoForm
-
-# ... (Blueprint e outras rotas) ...
-
-# --- ROTA PARA REGISTRAR PAGAMENTO ---
-# Recebe o ID da parcela na URL e só aceita POST
 @bp.route('/parcelas/<int:id>/pagar', methods=['POST'])
-@login_required # Protege a rota, requer login
+@login_required
 def registrar_pagamento(id):
-    parcela = db.get_or_404(Parcela, id) # Busca a parcela específica
-
-    # Segurança: Verifica se a parcela realmente está aberta antes de pagar
+    parcela = db.get_or_404(Parcela, id)
     if parcela.status != StatusParcela.ABERTA:
         flash('Esta parcela não está aberta para pagamento.', 'warning')
-        return redirect(url_for('main.listar_parcelas')) # Ou de onde veio
+        return redirect(request.referrer or url_for('main.listar_parcelas'))
+    
+    # Usar request.form para pegar dados de um formulário HTML simples
+    try:
+        data_pagamento_str = request.form.get('data_pagamento')
+        valor_pago_str = request.form.get('valor_pago')
 
-    form = RegistrarPagamentoForm() # Instancia o formulário
+        if not data_pagamento_str or not valor_pago_str:
+            flash('Data do pagamento e valor pago são obrigatórios.', 'danger')
+            return redirect(request.referrer or url_for('main.listar_parcelas'))
 
-    # O WTForms valida os dados recebidos do POST automaticamente aqui
-    if form.validate_on_submit():
-        try:
-            # Atualiza os campos da parcela com os dados do formulário
-            parcela.data_pagamento = form.data_pagamento.data
-            parcela.valor_pago = form.valor_pago.data
-            parcela.status = StatusParcela.LIQUIDADA # Muda o status
-
-            db.session.commit() # Salva as alterações no banco
-            flash(f'Pagamento da parcela {parcela.numero_parcela} registrado com sucesso!', 'success')
-        except Exception as e:
-            db.session.rollback() # Desfaz em caso de erro
-            flash(f'Erro ao registrar pagamento: {e}', 'danger')
-    else:
-        # Se a validação do formulário falhar (ex: data inválida, valor não numérico)
-        # Captura os erros para exibir
-        erros = []
-        for field, error_list in form.errors.items():
-            erros.extend(error_list)
-        flash('Erro ao processar pagamento: ' + '; '.join(erros), 'danger')
+        parcela.data_pagamento = datetime.strptime(data_pagamento_str, '%Y-%m-%d').date()
+        parcela.valor_pago = Decimal(valor_pago_str.replace(',', '.')) # Trata vírgula e ponto
+        parcela.status = StatusParcela.LIQUIDADA
+        db.session.commit()
+        flash(f'Pagamento da parcela {parcela.numero_parcela} registrado com sucesso!', 'success')
+    except ValueError:
+        flash('Formato inválido para data ou valor.', 'danger')
+        db.session.rollback()
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Erro ao registrar pagamento: {str(e)}', 'danger')
+    return redirect(request.referrer or url_for('main.listar_parcelas'))
 
 
-    # Redireciona de volta para a lista de parcelas (poderia ser a página anterior)
-    # Idealmente, manteria os filtros da página anterior, mas isso é mais complexo
-    return redirect(url_for('main.listar_parcelas'))
-
-# --- ROTA PARA CANCELAR PARCELA ---
 @bp.route('/parcelas/<int:id>/cancelar', methods=['POST'])
-@login_required # Protege a rota, requer login
+@login_required
 def cancelar_parcela(id):
     parcela = db.get_or_404(Parcela, id)
-
-    # Permite cancelar apenas parcelas ABERTAS (não pagas)
     if parcela.status != StatusParcela.ABERTA:
         flash('Apenas parcelas abertas podem ser canceladas.', 'warning')
-        return redirect(url_for('main.listar_parcelas')) # Idealmente, manter filtros
-
+        return redirect(request.referrer or url_for('main.listar_parcelas'))
     try:
-        parcela.status = StatusParcela.CANCELADA # Muda o status
-        # Opcional: Limpar dados de pagamento se houver por algum erro? Geralmente não.
-        # parcela.data_pagamento = None
-        # parcela.valor_pago = None
+        parcela.status = StatusParcela.CANCELADA
         db.session.commit()
         flash(f'Parcela {parcela.numero_parcela} cancelada com sucesso!', 'success')
     except Exception as e:
         db.session.rollback()
-        flash(f'Erro ao cancelar parcela: {e}', 'danger')
+        flash(f'Erro ao cancelar parcela: {str(e)}', 'danger')
+    return redirect(request.referrer or url_for('main.listar_parcelas'))
 
-    return redirect(url_for('main.listar_parcelas')) # Idealmente, manter filtros
+@bp.route('/parcelas/<int:id>/desfazer_liquidacao', methods=['POST'])
+@login_required
+def desfazer_liquidacao_parcela(id):
+    parcela = db.get_or_404(Parcela, id)
+    if parcela.status != StatusParcela.LIQUIDADA:
+        flash('Apenas parcelas liquidadas podem ter a liquidação desfeita.', 'warning')
+        return redirect(request.referrer or url_for('main.listar_parcelas'))
+    try:
+        parcela.status = StatusParcela.ABERTA
+        parcela.data_pagamento = None
+        parcela.valor_pago = None
+        db.session.commit()
+        flash(f'Liquidação da parcela {parcela.numero_parcela} desfeita! Status: Aberta.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Erro ao desfazer liquidação: {str(e)}', 'danger')
+    return redirect(request.referrer or url_for('main.listar_parcelas'))
 
-# --- ROTA PARA EDITAR PARCELA ---
 @bp.route('/parcelas/<int:id>/editar', methods=['GET', 'POST'])
-@login_required # Protege a rota, requer login
+@login_required
 def editar_parcela(id):
     parcela = db.get_or_404(Parcela, id)
-
-    # Permite editar apenas parcelas ABERTAS
     if parcela.status != StatusParcela.ABERTA:
         flash('Apenas parcelas abertas podem ser editadas.', 'warning')
-        return redirect(url_for('main.listar_parcelas')) # Idealmente, manter filtros
-
-    form = EditarParcelaForm(obj=parcela) # Pré-popula com dados atuais
-
+        return redirect(url_for('main.listar_parcelas'))
+    form = EditarParcelaForm(obj=parcela)
     if form.validate_on_submit():
         try:
             parcela.valor_parcela = form.valor_parcela.data
             parcela.data_vencimento = form.data_vencimento.data
-            # parcela.obs_edicao = form.obs_edicao.data # Se adicionar campo obs
             db.session.commit()
             flash(f'Parcela {parcela.numero_parcela} atualizada com sucesso!', 'success')
-            return redirect(url_for('main.listar_parcelas')) # Idealmente, manter filtros
+            return redirect(url_for('main.listar_parcelas'))
         except Exception as e:
             db.session.rollback()
-            flash(f'Erro ao atualizar parcela: {e}', 'danger')
-
-    # Se for GET ou form inválido, renderiza o template de edição
-    return render_template('cobrancas/form_editar_parcela.html',
-                           title='e-Cobranças  - Editar Parcela',
-                           form=form,
-                           parcela=parcela) # Passa a parcela para exibir infos
-
-# --- FIM DA ROTA EDITAR PARCELA ---
+            flash(f'Erro ao atualizar parcela: {str(e)}', 'danger')
+    return render_template('cobrancas/form_editar_parcela.html', title='e-Cobranças - Editar Parcela', form=form, parcela=parcela)
 
 
-# --- ROTA PARA LISTAR PARCELAS ---
 @bp.route('/parcelas')
 @bp.route('/parcelas/lista')
+@login_required
 def listar_parcelas():
     page = request.args.get('page', 1, type=int)
-    # Instancia o formulário com dados da URL GET
     form = FiltroParcelasForm(request.args)
+    query, status_filter_usado = _construir_query_parcelas_filtradas(request.args)
 
-    # --- Leitura dos Filtros a partir do form (ou args como fallback) ---
-    # Usa form.data se disponível, senão pega de request.args com defaults
-    status_filter = form.status.data or request.args.get('status', 'aberta')
-    cliente_filter = form.cliente.data # Será o objeto Cliente ou None
-    cidade_filter = form.cidade.data   # Será o objeto Cidade ou None
-    venc_inicio_f = form.venc_inicio.data
-    venc_fim_f = form.venc_fim.data
-    pag_inicio_f = form.pag_inicio.data
-    pag_fim_f = form.pag_fim.data
-
-    # Query base - JOINs movidos para dentro dos filtros condicionais
-    query = Parcela.query.options(joinedload(Parcela.cliente_ref).joinedload(Cliente.cidade_ref)) # Carrega cliente e cidade
-
-    # Aplica filtro inicial para Clientes Ativos SEMPRE
-    query = query.join(Cliente, Parcela.cliente_id == Cliente.id).filter(Cliente.ativo == True)
-
-    # --- Aplicação dos Filtros ---
-    # 1. Filtro por Status
-    hoje = date.today()
-    if status_filter == 'aberta':
-        query = query.filter(Parcela.status == StatusParcela.ABERTA, Parcela.data_vencimento >= hoje)
-    elif status_filter == 'liquidada':
-        query = query.filter(Parcela.status == StatusParcela.LIQUIDADA)
-    elif status_filter == 'atrasada':
-        query = query.filter(Parcela.status == StatusParcela.ABERTA, Parcela.data_vencimento < hoje)
-    elif status_filter == 'cancelada':
-         query = query.filter(Parcela.status == StatusParcela.CANCELADA)
-    # Se 'todas', nenhum filtro de status aqui
-
-    # 2. Filtro por Cliente Específico
-    if cliente_filter:
-        query = query.filter(Parcela.cliente_id == cliente_filter.id)
-
-    # 3. Filtro por Cidade Específica
-    if cidade_filter:
-        # Não precisa de join extra se já fizemos join com Cliente antes
-        query = query.filter(Cliente.cidade_id == cidade_filter.id)
-
-    # 4. Filtro por Data de Vencimento
-    if venc_inicio_f:
-        query = query.filter(Parcela.data_vencimento >= venc_inicio_f)
-    if venc_fim_f:
-        query = query.filter(Parcela.data_vencimento <= venc_fim_f)
-
-    # 5. Filtro por Data de Pagamento
-    if pag_inicio_f:
-        query = query.filter(Parcela.data_pagamento != None, Parcela.data_pagamento >= pag_inicio_f)
-    if pag_fim_f:
-        query = query.filter(Parcela.data_pagamento != None, Parcela.data_pagamento <= pag_fim_f)
-
-    # --- Ordenação ---
-    if status_filter == 'liquidada':
-         query = query.order_by(Parcela.data_pagamento.desc())
+    if status_filter_usado == 'liquidada':
+         query = query.order_by(Parcela.data_pagamento.desc(), Parcela.data_vencimento.desc())
     else:
          query = query.order_by(Parcela.data_vencimento.asc())
 
-    # --- Totais (Calculados após filtros) ---
     query_sub = query.subquery()
-    total_valor_parcelas = db.session.query(func.sum(query_sub.c.valor_parcela)).scalar() or 0.0
-    total_valor_pago = db.session.query(func.sum(query_sub.c.valor_pago)).filter(query_sub.c.status == StatusParcela.LIQUIDADA).scalar() or 0.0
-    count_parcelas = db.session.query(db.func.count()).select_from(query_sub).scalar()
+    total_valor_parcelas = db.session.query(func.sum(query_sub.c.valor_parcela)).scalar() or Decimal('0.00')
+    # Corrigido para usar query_sub para total_valor_pago também
+    total_valor_pago = db.session.query(func.sum(query_sub.c.valor_pago)).filter(query_sub.c.status == StatusParcela.LIQUIDADA).scalar() or Decimal('0.00')
+    count_parcelas = db.session.query(db.func.count(query_sub.c.id)).scalar() or 0
 
-    # --- Paginação ---
+
     parcelas_paginadas = query.paginate(page=page, per_page=15, error_out=False)
-
-    # --- Prepara dados para o template ---
-    # Não precisa mais passar lista_clientes/lista_status, o form cuida disso
-    return render_template(
-        'parcelas/lista_parcelas.html',
-        title='e-Cobranças  - Lista de Parcelas',
-        form=form, # Passa o formulário para renderização
-        parcelas=parcelas_paginadas,
-        # Passa os filtros ATUAIS para o botão PDF e paginação
-        # Ler diretamente de request.args é mais seguro aqui para manter a URL
-        current_filters={
-            'status': request.args.get('status', 'aberta'),
-            'cliente': request.args.get('cliente', ''),
-            'cidade': request.args.get('cidade', ''), # Adiciona cidade
-            'venc_inicio': request.args.get('venc_inicio', ''),
-            'venc_fim': request.args.get('venc_fim', ''),
-            'pag_inicio': request.args.get('pag_inicio', ''),
-            'pag_fim': request.args.get('pag_fim', '')
-        },
-        totais={
-             'valor_parcelas': total_valor_parcelas,
-             'valor_pago': total_valor_pago,
-             'quantidade': count_parcelas
-        },
-        StatusParcela=StatusParcela,
-        date=date
-    )
-# --- FIM DA ROTA LISTAR PARCELAS ---
-
-# --- ROTA PARA GERAR PDF DA LISTA DE PARCELAS FILTRADA ---
-@bp.route('/parcelas/pdf')
-@login_required # <-- Proteger Dashboard
-def listar_parcelas_pdf():
-    # --- Leitura dos Filtros (da URL GET) ---
-    status_filter = request.args.get('status', 'aberta')
-    cliente_id_filter = request.args.get('cliente', type=int) # Pega ID como int
-    cidade_id_filter = request.args.get('cidade', type=int)   # Pega ID como int
-    venc_inicio_str = request.args.get('venc_inicio', '')
-    venc_fim_str = request.args.get('venc_fim', '')
-    pag_inicio_str = request.args.get('pag_inicio', '')
-    pag_fim_str = request.args.get('pag_fim', '')
-
-    venc_inicio_f = None
-    venc_fim_f = None
-    pag_inicio_f = None
-    pag_fim_f = None
-
     
- 
-    try: # Converte datas string para date objects
-        if venc_inicio_str: venc_inicio_f = datetime.strptime(venc_inicio_str, '%Y-%m-%d').date()
-        if venc_fim_str: venc_fim_f = datetime.strptime(venc_fim_str, '%Y-%m-%d').date()
-        if pag_inicio_str: pag_inicio_f = datetime.strptime(pag_inicio_str, '%Y-%m-%d').date()
-        if pag_fim_str: pag_fim_f = datetime.strptime(pag_fim_str, '%Y-%m-%d').date()
-    except ValueError:
-        flash('Formato de data inválido no link PDF.', 'warning') # Pode acontecer se URL for manipulada
-        # Decide como tratar: gerar PDF sem filtro de data ou retornar erro?
-        # Vamos gerar sem filtro de data neste caso
-        venc_inicio_f = venc_fim_f = pag_inicio_f = pag_fim_f = None
+    current_filters_for_template = {k: v for k, v in request.args.items() if v} # Pega apenas filtros com valor
+    current_filters_for_template.setdefault('status', 'aberta') # Garante default para status
 
+    return render_template(
+        'parcelas/lista_parcelas.html', title='e-Cobranças - Lista de Parcelas',
+        form=form, parcelas=parcelas_paginadas,
+        current_filters=current_filters_for_template,
+        totais={'valor_parcelas': total_valor_parcelas, 'valor_pago': total_valor_pago, 'quantidade': count_parcelas},
+        StatusParcela=StatusParcela, date=date
+    )
 
-    # --- REPLICA LÓGICA DE QUERY E FILTROS (sem paginação) ---
-    query = Parcela.query.options(joinedload(Parcela.cliente_ref).joinedload(Cliente.cidade_ref))
-    query = query.join(Cliente, Parcela.cliente_id == Cliente.id).filter(Cliente.ativo == True)
-
-    hoje = date.today()
-    if status_filter == 'aberta':
-        query = query.filter(Parcela.status == StatusParcela.ABERTA, Parcela.data_vencimento >= hoje)
-    elif status_filter == 'liquidada':
-        query = query.filter(Parcela.status == StatusParcela.LIQUIDADA)
-    elif status_filter == 'atrasada':
-        query = query.filter(Parcela.status == StatusParcela.ABERTA, Parcela.data_vencimento < hoje)
-    elif status_filter == 'cancelada':
-         query = query.filter(Parcela.status == StatusParcela.CANCELADA)
-
-    if cliente_id_filter:
-        query = query.filter(Parcela.cliente_id == cliente_id_filter)
-
-    if cidade_id_filter:
-        query = query.filter(Cliente.cidade_id == cidade_id_filter)
-
-    if venc_inicio_f: query = query.filter(Parcela.data_vencimento >= venc_inicio_f)
-    if venc_fim_f: query = query.filter(Parcela.data_vencimento <= venc_fim_f)
-    if pag_inicio_f: query = query.filter(Parcela.data_pagamento != None, Parcela.data_pagamento >= pag_inicio_f)
-    if pag_fim_f: query = query.filter(Parcela.data_pagamento != None, Parcela.data_pagamento <= pag_fim_f)
-
-    # Ordena
-    if status_filter == 'liquidada':
+@bp.route('/parcelas/pdf')
+@login_required
+def listar_parcelas_pdf():
+    query, status_filter_usado = _construir_query_parcelas_filtradas(request.args)
+    if status_filter_usado == 'liquidada':
          query = query.order_by(Parcela.data_pagamento.desc())
     else:
          query = query.order_by(Parcela.data_vencimento.asc())
-
-    # Busca TODOS os resultados filtrados
     parcelas_filtradas = query.all()
-    # --- FIM LÓGICA DE QUERY ---
 
-    # --- Cálculo de Totais (baseado na lista filtrada) ---
-    totais = {'aberto': Decimal('0.00'), 'pago': Decimal('0.00'), 'cancelado': Decimal('0.00'), 'geral_parcela': Decimal('0.00')}
-    for p in parcelas_filtradas:
-        totais['geral_parcela'] += (p.valor_parcela or Decimal('0.00')) # Soma total das parcelas listadas
-        if p.status == StatusParcela.LIQUIDADA:
-            totais['pago'] += (p.valor_pago or Decimal('0.00'))
-        elif p.status == StatusParcela.ABERTA:
-            totais['aberto'] += (p.valor_parcela or Decimal('0.00'))
-        elif p.status == StatusParcela.CANCELADA:
-            totais['cancelado'] += (p.valor_parcela or Decimal('0.00'))
-    # --- FIM Totais ---
+    totais_pdf = {'aberto': Decimal('0.00'), 'pago': Decimal('0.00'), 'cancelado': Decimal('0.00'), 'geral_parcela': Decimal('0.00')}
+    for p_pdf in parcelas_filtradas:
+        totais_pdf['geral_parcela'] += (p_pdf.valor_parcela or Decimal('0.00'))
+        if p_pdf.status == StatusParcela.LIQUIDADA: totais_pdf['pago'] += (p_pdf.valor_pago or Decimal('0.00'))
+        elif p_pdf.status == StatusParcela.ABERTA: totais_pdf['aberto'] += (p_pdf.valor_parcela or Decimal('0.00'))
+        elif p_pdf.status == StatusParcela.CANCELADA: totais_pdf['cancelado'] += (p_pdf.valor_parcela or Decimal('0.00'))
 
-    # Busca nomes de cliente/cidade para o cabeçalho do PDF se IDs foram passados
+    cliente_id_filter = request.args.get('cliente', type=int)
+    cidade_id_filter = request.args.get('cidade', type=int)
     nome_cliente_filtro = Cliente.query.get(cliente_id_filter).nome if cliente_id_filter else "Todos"
     cidade_obj = Cidade.query.get(cidade_id_filter) if cidade_id_filter else None
     nome_cidade_filtro = f"{cidade_obj.nome_cidade}/{cidade_obj.estado}" if cidade_obj else "Todas"
-
-
-  # --- Formatação das datas para exibição no cabeçalho PDF ---
-    venc_inicio_fmt = venc_inicio_f.strftime('%d/%m/%Y') if venc_inicio_f else "Início"
-    venc_fim_fmt = venc_fim_f.strftime('%d/%m/%Y') if venc_fim_f else "Fim"
-    pag_inicio_fmt = pag_inicio_f.strftime('%d/%m/%Y') if pag_inicio_f else "Início"
-    pag_fim_fmt = pag_fim_f.strftime('%d/%m/%Y') if pag_fim_f else "Fim"
-    # ----------------------------------------------------------
-
-    # Renderiza template base do PDF
-    html_string = render_template(
-        'parcelas/lista_parcelas_pdf_base.html',
-        title=f'e-Cobranças  - Relatório de Parcelas',
-        parcelas=parcelas_filtradas,
-        totais=totais,
-        filtros_info={ # <-- USA AS VARIÁVEIS _fmt CORRIGIDAS
-            'status': status_filter.replace("_", " ").capitalize(),
-            'cliente': nome_cliente_filtro,
-            'cidade': nome_cidade_filtro,
-            'venc_inicio': venc_inicio_fmt,  # <-- Correto
-            'venc_fim': venc_fim_fmt,      # <-- Correto
-            'pag_inicio': pag_inicio_fmt,   # <-- Correto
-            'pag_fim': pag_fim_fmt        # <-- Correto
-        },
-        StatusParcela=StatusParcela,
-        date=date
-    )
-        # Passa StatusParcela e date se necessário no template PDF
     
+    def format_date_for_pdf(date_str):
+        if not date_str: return "N/A"
+        try: return datetime.strptime(date_str, '%Y-%m-%d').strftime('%d/%m/%Y')
+        except ValueError: return date_str # Retorna original se não puder formatar
 
-    # Gera PDF e resposta (como antes)
+    filtros_info_pdf = {
+        'status': status_filter_usado.replace("_", " ").capitalize(),
+        'cliente': nome_cliente_filtro, 'cidade': nome_cidade_filtro,
+        'venc_inicio': format_date_for_pdf(request.args.get('venc_inicio')),
+        'venc_fim': format_date_for_pdf(request.args.get('venc_fim')),
+        'pag_inicio': format_date_for_pdf(request.args.get('pag_inicio')),
+        'pag_fim': format_date_for_pdf(request.args.get('pag_fim'))
+    }
+
+    html_string = render_template(
+        'parcelas/lista_parcelas_pdf_base.html', title=f'e-Cobranças - Relatório de Parcelas',
+        parcelas=parcelas_filtradas, totais=totais_pdf, filtros_info=filtros_info_pdf,
+        StatusParcela=StatusParcela, date=date
+    )
     pdf_bytes = HTML(string=html_string, base_url=request.url_root).write_pdf()
     response = make_response(pdf_bytes)
     response.headers['Content-Type'] = 'application/pdf'
     response.headers['Content-Disposition'] = f'inline; filename=lista_parcelas_{date.today().strftime("%Y%m%d")}.pdf'
     return response
 
-        # --- Recalcula totais BASEADO NAS PARCELAS FILTRADAS ---
-    totais_extrato = {'aberto': Decimal('0.00'), 'pago': Decimal('0.00'), 'cancelado': Decimal('0.00')} # Reseta
-    for p in parcelas_cliente: # Itera sobre as parcelas JÁ filtradas por data
-            if p.status == StatusParcela.LIQUIDADA:
-                totais_extrato['pago'] += (p.valor_pago or Decimal('0.00'))
-            elif p.status == StatusParcela.ABERTA:
-                totais_extrato['aberto'] += (p.valor_parcela or Decimal('0.00'))
-            elif p.status == StatusParcela.CANCELADA:
-                totais_extrato['cancelado'] += (p.valor_parcela or Decimal('0.00'))
-        # --- Fim Recálculo Totais ---
+# --- ROTA PARA ENVIAR LEMBRETES WHATSAPP EM LOTE ---
+@bp.route('/parcelas/enviar_lembretes_whatsapp_lote', methods=['POST'])
+@login_required
+def enviar_lembretes_whatsapp_lote():
+    query_base, _ = _construir_query_parcelas_filtradas(request.form)
+    parcelas_filtradas_para_lembrete = query_base.filter(
+        Parcela.status == StatusParcela.ABERTA # Somente parcelas ABERTAS (inclui atrasadas e a vencer)
+    ).order_by(Parcela.cliente_id, Parcela.data_vencimento).all()
 
-    return render_template('relatorios/extrato_cliente.html',
-                           title='e-Cobranças  - Extrato do Cliente',
-                           form=form,
-                           cliente=cliente_selecionado,
-                           parcelas=parcelas_cliente,
-                           totais=totais_extrato,
-                           # Passa as datas para o botão PDF
-                           data_inicio_str=data_inicio_str,
-                           data_fim_str=data_fim_str)
+    if not parcelas_filtradas_para_lembrete:
+        flash('Nenhuma parcela aberta ou atrasada encontrada com os filtros aplicados para enviar lembretes.', 'info')
+        return redirect(url_for('main.listar_parcelas', **request.form.to_dict(flat=True)))
 
+    clientes_a_notificar = agrupar_parcelas_abertas_por_cliente(parcelas_filtradas_para_lembrete)
 
+    if not clientes_a_notificar:
+        flash('Nenhum cliente com parcelas abertas/atrasadas encontrado nos filtros para notificar.', 'info')
+        return redirect(url_for('main.listar_parcelas', **request.form.to_dict(flat=True)))
 
+    app_context_obj = current_app._get_current_object() # Correção aqui
+    mensagens_programadas_count = 0
+    clientes_problema_count = 0
 
-# --- FIM ROTAS DE RELATÓRIOS ---
+    for cliente, dados in clientes_a_notificar.items():
+        if not cliente.telefone:
+            clientes_problema_count += 1
+            current_app.logger.warning(f"Cliente {cliente.nome} (ID: {cliente.id}) não tem telefone para envio de lembrete.")
+            continue
+
+        telefone_formatado = ''.join(filter(str.isdigit, cliente.telefone))
+        if len(telefone_formatado) > 2 and telefone_formatado.startswith('55'):
+             pass # Já tem DDI Brasil
+        elif len(telefone_formatado) >= 10: # DDD + Número
+            telefone_formatado = "55" + telefone_formatado
+        else:
+            clientes_problema_count += 1
+            current_app.logger.warning(f"Telefone de {cliente.nome} (ID: {cliente.id}) inválido para API Evolution: {cliente.telefone}. Formato esperado: 55DDDXXXXXXXXX")
+            continue
+        
+        mensagem_partes = [f"Olá {cliente.nome}! Lembrete e-Cobranças:"]
+        mensagem_partes.append("Constam as seguintes parcelas em aberto/atraso em seu nome:")
+        for p in dados['parcelas']:
+            estado_parcela_txt = "com vencimento em" if not p.esta_vencida else "vencida em"
+            mensagem_partes.append(
+                f"- Parcela nº {p.numero_parcela}, {estado_parcela_txt} {p.data_vencimento.strftime('%d/%m/%Y')}, Valor: R$ {p.valor_parcela:.2f}"
+            )
+        mensagem_partes.append(f"\nValor total pendente (desta seleção): R$ {dados['total_devido']:.2f}")
+        mensagem_partes.append("\nPara regularizar ou mais detalhes, entre em contato ou acesse nosso portal.")
+        mensagem_final = "\n".join(mensagem_partes)
+
+        thread = Thread(target=enviar_whatsapp_evolution_em_background, 
+                        args=(app_context_obj, telefone_formatado, mensagem_final)) # Correção aqui
+        thread.start()
+        mensagens_programadas_count += 1
+
+    feedback_message = f"Processo de envio de lembretes WhatsApp (API Evolution) iniciado para {mensagens_programadas_count} cliente(s)."
+    if clientes_problema_count > 0:
+        feedback_message += f" {clientes_problema_count} cliente(s) não puderam ser processados por falta de telefone ou formato inválido."
+    
+    flash(feedback_message, 'info')
+    return redirect(url_for('main.listar_parcelas', **request.form.to_dict(flat=True)))
+# --- FIM ROTAS DE COBRANÇAS/PARCELAS ---
+
+# Rota de teste para API Evolution (opcional, para debug)
+@bp.route('/teste_whatsapp_api_evolution', methods=['GET'])
+@login_required
+def teste_whatsapp_api_evolution():
+    if not getattr(current_user, 'is_admin', False): # Verifica se o usuário é admin
+        flash('Acesso negado a esta funcionalidade.', 'danger')
+        return redirect(url_for('main.dashboard'))
+
+    # Substitua pelo seu número de teste no formato da API (ex: 5511999998888)
+    num_teste = "5599991266682" # COLOQUE SEU NÚMERO DE TESTE REAL AQUI
+    msg_teste = "Olá! Teste da API Evolution para e-Cobranças. Sucesso! 🎉"
+    
+    if num_teste == "55SEUDDDSEUNUMERO": # Lembrete para não commitar número real
+        flash("Por favor, defina um número de telefone real para o teste.", "warning")
+        return "Configure um número de teste na rota.", 400
+
+    sucesso, detalhes = enviar_mensagem_whatsapp_evolution(num_teste, msg_teste)
+    
+    if sucesso:
+        flash(f"Teste de WhatsApp enviado para {num_teste}. Resposta da API: {detalhes}", "success")
+    else:
+        flash(f"Falha no teste de WhatsApp para {num_teste}. Resposta da API: {detalhes}", "danger")
+    
+    return redirect(url_for('main.dashboard'))
