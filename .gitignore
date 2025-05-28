@@ -5,3 +5,4 @@ __pycache__/
 .env
 instance/ # Pasta que o Flask pode criar
 migrations/ # Opcional: Alguns preferem versionar, outros não.
+logs/
