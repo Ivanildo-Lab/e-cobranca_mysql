@@ -23,6 +23,7 @@ from app.models import Parcela, StatusParcela, Cliente, Cidade, User # Adicionad
 from app.forms import (CidadeForm, ClienteForm, GerarParcelasForm,
                        RegistrarPagamentoForm, EditarParcelaForm, FiltroParcelasForm)
 from . import bp
+from weasyprint import HTML
 
 # locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8') # Opcional: se precisar de formatação de locale específica no backend
 
